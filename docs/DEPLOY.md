@@ -1,7 +1,9 @@
 # Kirameku2.0 部署说明
 
-> 目标架构：前端 Cloudflare Pages + 后端 NAS 自托管 + 域名 neutronstar.fun
-> 更新日期：2026-09-08
+> 目标架构：前端 + 后端都跑在 NAS 的 Docker/venv，经 Cloudflare Tunnel 公网暴露，域名 neutronstar.fun
+> 更新日期：2026-09-08（前端后端均已上线）
+>
+> 注：最初计划前端用 CF Pages，但因 Next 16 客户端动态路由 + 服务端路由在 CF 适配器（next-on-pages 已弃用、OpenNext 尚不兼容 Next 16）与静态导出下均无法承载，故前端改回 NAS 容器运行（保留全部 SSr/ISR/动态路由）。CF Pages 留待适配器支持 Next 16 后再迁回。
 
 ## 一、端口清单（全部）
 
@@ -11,44 +13,44 @@
 | 55284 | QTS 管理面板 | NAS | 内网 |
 | 9999 | 统一任务管理面板 | NAS | 内网 |
 | 520 | 旧博客 Web 虚拟机（待下线） | NAS | 内网/IPv6 |
-| **15432** | **PostgreSQL 容器**（映射自容器内 5432） | NAS Docker | 仅本机 |
-| **8100** | **FastAPI 后端**（Kirameku-backend） | NAS | 仅 Tunnel |
+| **15432** | **PostgreSQL 容器**（kirameku-pg 容器内 5432） | NAS Docker | 仅本机 |
+| **8100** | **FastAPI 后端**（kirameku/backend） | NAS uvicorn | 仅 Tunnel |
+| **3000** | **Next.js 前端**（kirameku-fe 容器） | NAS Docker | 仅 Tunnel |
 | 18080 | Novel 阅读服务（可选） | NAS | 仅内网 |
-| — | Next.js 前端 | **Cloudflare Pages** | 全球 CDN |
-| — | API 代理 Worker | **Cloudflare Workers** | 全球 CDN |
 | 443/80 | cloudflared Tunnel 出站 | NAS → CF | 出站连接 |
 
-> 设计原则：NAS 只向内监听（8100 绑 127.0.0.1 或内网），公网访问一律经 Cloudflare Tunnel，**不开任何新公网入站端口**。
+> NAS 只向内监听，公网访问一律经 Cloudflare Tunnel，无新公网入站端口。
 
 ## 二、架构
 
 ```
-浏览器 → https://neutronstar.fun (Cloudflare Pages 前端)
+浏览器 → https://neutronstar.fun (Cloudflare Tunnel)
               │
-              ├── /api/*  → CF Worker 代理
-              │              │
-              │              └── cloudflared Tunnel → NAS 127.0.0.1:8100 (FastAPI)
-              │                                              │
-              │                                              └── PostgreSQL (Docker, 宿主机 15432)
-              │
-              └── /uploads/* → 同上经 Worker/Tunnel 到 NAS uploads 目录
+              └── cloudflared (NAS) 按 Host 分流
+                    ├── neutronstar.fun / www → 127.0.0.1:3000  (Next 容器)
+                    │        └── rewrites: /api/*、/uploads/* → 隧道 → 8100
+                    └── kirameku-api.neutronstar.fun → 127.0.0.1:8100  (FastAPI)
+                                   └── PostgreSQL (Docker, 宿主机 15432)
 ```
 
 ## 三、域名与 CF
 
 | 域名 | 用途 | 指向 |
 |---|---|---|
-| neutronstar.fun | 主站 | Cloudflare Pages（CNAME/托管） |
-| kirameku-api.neutronstar.fun | 后端 API（Tunnel 域名） | Cloudflare Tunnel |
+| neutronstar.fun | 主站（前端） | Cloudflare Tunnel → NAS 3000 |
+| www.neutronstar.fun | 主站别名 | Cloudflare Tunnel → NAS 3000 |
+| kirameku-api.neutronstar.fun | 后端 API | Cloudflare Tunnel → NAS 8100 |
 
+- Tunnel：`kirameku-api`（id `710bfae8-...`，token 托管模式），ingress 按 Host 分流到 3000/8100
 - CF Token：账户 d4add8ad...（已验证 active）
-- 旧部署下线：阿里云宝塔旧站、旧 CF Pages/Vercel 项目、520 虚拟机 Typecho（已 500）
+- 旧部署待下线：阿里云宝塔旧站(boke.hiromu.top)、旧 CF Pages(neutronstar-front.pages.dev)、Vercel(www 已改)、520 Typecho 虚拟机
 
 ## 四、NAS 环境（已确认）
 
 - Docker 27.1.2-qnap8（container-station）
 - Python3.12 + pip3（/share/CACHEDEV1_DATA/.qpkg/Python3/opt/python3/bin/）
-- 无 cloudflared（需安装）
+- Node 22（便携版解压于 /share/CACHEDEV1_DATA/kirameku/node，构建在 Docker 内完成）
+- cloudflared 2026.8.3（/share/CACHEDEV1_DATA/kirameku/bin/）
 - 无 PostgreSQL qpkg（用 Docker 容器）
 
 ## 五、数据库
@@ -60,30 +62,33 @@
 
 ## 六、后端（NAS 8100）
 
-- 依赖：`pip3 install -r requirements.txt`（fastapi/uvicorn/sqlmodel/psycopg2/oss2 等）
-- 运行：`uvicorn app.main:app --host 127.0.0.1 --port 8100`
+- 依赖：`backend/venv/bin/pip install --only-binary :all: -r requirements.txt`（fastapi/uvicorn/sqlmodel/psycopg2-binary；oss2 需单独源码装）
+- 运行：`backend/start_backend.sh`（setsid uvicorn app.main:app --host 127.0.0.1 --port 8100），crontab @reboot
 - OSS 已改双模式：无 Key 时图片存 NAS `uploads/`，经 `/uploads/` 服务
-- 前端 rewrites：`/api/*` → `127.0.0.1:8100`，`/uploads/*` → 同后端
+- 前端 rewrites：`/api/*`、`/uploads/*` → 公网隧道 `kirameku-api.neutronstar.fun`
+- 坑：passlib 1.7.4 需 bcrypt==4.0.1（否则登录 500）；init_db.sql 初始 admin 哈希无效，已用应用 hash_password 重设 admin123
 
-## 七、前端（CF Pages）
+## 七、前端（NAS 容器 3000）
 
-- 源码 `Kirameku/`，Next.js 16，apiBaseUrl 留空走同源 /api
-- 部署：CF Pages 连接 GitHub 仓库 Kirameku2.0，构建命令 `pnpm build`
-- Worker 路由：`/api/*`、`/uploads/*` → 代理到 Tunnel 域名
+- 源码 `Kirameku/`，Next.js 16，apiBaseUrl 留空走同源 /api；next.config 的 /api、/uploads rewrites 指向公网隧道
+- 部署：`Kirameku/Dockerfile` → 镜像 `kirameku-fe:latest`（容器 --restart always，`127.0.0.1:3000:3000`）
+- 首页服务端 fetch 兜底 `NEXT_PUBLIC_API_URL` 已设为隧道域名
+- 更新方法：改源码 → 本地 `pnpm install`/改 `Dockerfile` → 推送 Kirameku/ 到 NAS → docker build → docker rm/run 重建
 
 ## 八、本地（台式机）
 
 - 项目根：`F:\AI\projects\Kirameku2.0`（git 仓库 + 备份）
-- 代码与 NAS 同步；.env 只存在于部署环境，不入 git
+- 代码与 NAS 同步；.env/密码/token 只在部署机理解（NAS /share/CACHEDEV1_DATA/kirameku/），不入 git
 - 数据库备份：`pg_dump` → 台式机存档
+- NAS 统一入口：`ssh admin@hewll`(uid=0)；docker 在 `/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker`（不在 PATH）
 
 ## 九、待办
 
-- [ ] git 提交并推 GitHub
-- [ ] CF Pages 绑定仓库
-- [ ] NAS Docker 起 PostgreSQL
-- [ ] NAS pip3 装依赖 + 起后端
-- [ ] NAS 装 cloudflared + Tunnel
-- [ ] CF Worker 部署
-- [ ] 域名绑定 neutronstar.fun
-- [ ] 下线旧部署
+- [x] NAS Docker 起 PostgreSQL
+- [x] NAS pip3 装依赖 + 起后端 8100 + crontab 自启
+- [x] NAS cloudflared + Tunnel + DNS + ingress
+- [x] 前端 Docker 容器 3000 + 主站公网上线
+- [x] git 本地提交（含 .gitignore 排除密钥/构建产物）
+- [ ] 推送 GitHub（待确认，231MB 含 live2d 媒体）
+- [ ] 下线旧部署：boke.hiromu.top(阿里云)、旧 CF Pages/Vercel、520 Typecho
+- [ ] 台式机 pg_dump 时序备份
