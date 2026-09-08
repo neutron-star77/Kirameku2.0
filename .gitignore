@@ -7,6 +7,7 @@ __pycache__/
 *.pyc
 uploads/
 admin/dist/
+Kirameku/public/live2d/
 
 # 环境变量（含密钥，禁止入库）
 .env
