@@ -12,7 +12,7 @@
 | 23023 | SSH 登录 | NAS | 内网 |
 | 55284 | QTS 管理面板 | NAS | 内网 |
 | 9999 | 统一任务管理面板 | NAS | 内网 |
-| 520 | 旧博客 Web 虚拟机（待下线） | NAS | 内网/IPv6 |
+| ~~520~~ | 旧 Typecho 站点（已下线 2026-09-08，文件保留 /share/Web/typecho） | NAS | 已停 |
 | **15432** | **PostgreSQL 容器**（kirameku-pg 容器内 5432） | NAS Docker | 仅本机 |
 | **8100** | **FastAPI 后端**（kirameku/backend） | NAS uvicorn | 仅 Tunnel |
 | **3000** | **Next.js 前端**（kirameku-fe 容器） | NAS Docker | 仅 Tunnel |
@@ -89,6 +89,7 @@
 - [x] NAS cloudflared + Tunnel + DNS + ingress
 - [x] 前端 Docker 容器 3000 + 主站公网上线
 - [x] git 本地提交（含 .gitignore 排除密钥/构建产物）
-- [ ] 推送 GitHub（待确认，231MB 含 live2d 媒体）
-- [ ] 下线旧部署：boke.hiromu.top(阿里云)、旧 CF Pages/Vercel、520 Typecho
-- [ ] 台式机 pg_dump 时序备份
+- [x] 推送 GitHub（源码约 11MB；live2d 213MB 不入库，源在 `F:\AI\projects\Kirameku`，仓库 neutron-star77/Kirameku2.0）
+- [x] 下线 NAS 旧 Typecho（520，文件保留，vhost 已注释 + 备份）
+- [ ] 下线云端旧部署（需账户凭据，本机无法触及）：boke.hiromu.top(阿里云宝塔)、CF Pages、Vercel
+- [x] 台式机 pg_dump 时序备份（NAS cron 每日 03:30 保留 30 份；首份已于 2026-09-08 拉回 `backups/db/`）
