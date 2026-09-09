@@ -1,0 +1,24 @@
+name = "kirameku-bff"
+account_id = "d4add8ad549536a77a5b9fcf6d5be733"
+main = "src/index.ts"
+compatibility_date = "2026-09-09"
+compatibility_flags = ["nodejs_compat"]
+
+# 过渡期：中间层独立子域，回源仍走现有隧道后端（不动 NAS 源站）
+routes = [{ pattern = "bff.neutronstar.fun", custom_domain = true }]
+
+[vars]
+# 源站 FastAPI（经 CF Tunnel 回 NAS）。T10 切根域后改用 origin.neutronstar.fun
+BACKEND_ORIGIN = "https://kirameku-api.neutronstar.fun"
+# GET 请求默认缓存策略（上游未给 Cache-Control 时使用）
+DEFAULT_SMAXAGE = "60"
+DEFAULT_SWR = "300"
+# 允许中间层直接代理的路径前缀
+PROXY_PREFIXES = "/api,/uploads,/reader3"
+
+[[kv_namespaces]]
+binding = "CACHE_TAGS"
+id = "4959a742fe4d44dbbc0ba8c200bea694"
+
+[observability]
+enabled = true

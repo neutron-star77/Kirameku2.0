@@ -38,11 +38,8 @@ def login(req: LoginRequest, session: Session = Depends(get_session)):
 
 
 @router.get("/me")
-def me(user: dict = Depends(get_current_user), session: Session = Depends(get_session)):
-    username = user.get("sub")
-    db_user = session.exec(select(User).where(User.username == username)).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+def me(user: User = Depends(get_current_user)):
+    db_user = user
     return {
         "code": 0,
         "message": "success",
@@ -62,13 +59,10 @@ def me(user: dict = Depends(get_current_user), session: Session = Depends(get_se
 @router.put("/me")
 def update_me(
     data: dict,
-    user: dict = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    username = user.get("sub")
-    db_user = session.exec(select(User).where(User.username == username)).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+    db_user = user
     if "nickname" in data:
         db_user.nickname = data["nickname"]
     if "email" in data:

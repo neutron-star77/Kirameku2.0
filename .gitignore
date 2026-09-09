@@ -3,10 +3,14 @@ node_modules/
 .next/
 out/
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.db
+.pytest_cache/
 uploads/
 admin/dist/
+Kirameku-backend/admin/dist.tar.gz
 Kirameku/public/live2d/
 backups/
 
@@ -15,6 +19,8 @@ backups/
 .env.local
 .env.*.local
 !.env.example
+.dev.vars
+.dev.vars.example.bak
 
 # 敏感文件（密码/token）
 .pgpass.tmp
@@ -25,6 +31,16 @@ worker/tunnel.token
 # 系统
 .DS_Store
 Thumbs.db
+
+# 本地工作记忆（不入库）
+.codebuddy/
+
+# Cloudflare Workers 本地状态/缓存
+.wrangler/
+worker-bff/.wrangler/
+
+# 前端主站是独立仓库（neutron-star77/neutronstar-web），不在本仓库内跟踪
+web/
 
 # 编辑器
 .vscode/

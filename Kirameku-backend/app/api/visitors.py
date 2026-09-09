@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlmodel import Session
 
-from app.deps import get_session
+from app.deps import get_session, get_current_user
+from app.models import User
 from app.services import visitor_service
 
 router = APIRouter(prefix="/api/visitors", tags=["访客记录"])
@@ -62,14 +63,18 @@ def record_visitor(
 def delete_visitor(
     visitor_id: int,
     session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
 ):
-    """删除单条访客记录"""
+    """删除单条访客记录（需管理员）"""
     visitor_service.delete_visitor(session, visitor_id)
     return {"code": 0, "message": "ok"}
 
 
 @router.delete("")
-def clear_visitors(session: Session = Depends(get_session)):
-    """清空所有访客记录"""
+def clear_visitors(
+    session: Session = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """清空所有访客记录（需管理员）"""
     visitor_service.clear_visitors(session)
     return {"code": 0, "message": "ok"}

@@ -8,6 +8,7 @@ import type { Album } from "@/components/photos/AlbumCard";
 import Lightbox from "@/components/photos/Lightbox";
 import type { Photo } from "@/data/photos";
 import { getAlbums, getAlbumPhotos } from "@/app/api";
+import { guidaoAlbum } from "@/data/guidao";
 
 export default function PhotoWallPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -34,29 +35,37 @@ export default function PhotoWallPage() {
     async function fetchData() {
       try {
         const albumList = await getAlbums();
-        albumList.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
-        const results = await Promise.all(
-          albumList.map(async (album) => {
-            const photos = await getAlbumPhotos(album.id);
-            return {
-              id: album.id,
-              title: album.title,
-              updatedAt: album.updated_at,
-              photoCount: album.photo_count,
-              photos: photos.reverse().map((p) => ({
-                id: String(p.id),
-                url: p.url,
-                caption: p.caption,
-                orientation: (p.orientation as Photo["orientation"]) || "landscape",
-              })),
-            };
-          })
-        );
+        let results: Album[];
+        if (albumList.length === 0) {
+          // 后端相册为空（CMS 未录入），直接回退到图床静态相册（鬼刀图床链接.md）
+          results = [guidaoAlbum];
+        } else {
+          albumList.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+          results = await Promise.all(
+            albumList.map(async (album) => {
+              const photos = await getAlbumPhotos(album.id);
+              return {
+                id: album.id,
+                title: album.title,
+                updatedAt: album.updated_at,
+                photoCount: album.photo_count,
+                photos: photos.reverse().map((p) => ({
+                  id: String(p.id),
+                  url: p.url,
+                  caption: p.caption,
+                  orientation: (p.orientation as Photo["orientation"]) || "landscape",
+                })),
+              };
+            })
+          );
+        }
 
         setAlbums(results);
       } catch {
-        setAlbums([]);
+        // 后端不可达时同样回退到图床静态相册
+        setAlbums([guidaoAlbum]);
       } finally {
         setLoading(false);
       }
