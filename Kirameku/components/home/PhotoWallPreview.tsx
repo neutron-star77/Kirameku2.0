@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { getAlbums, getAlbumPhotos } from "@/app/api";
-import { guidaoAlbum } from "@/data/guidao";
 
 interface Photo {
   id: number;
@@ -22,20 +21,18 @@ export default function PhotoWallPreview() {
   const isDragging = useRef(false);
 
   useEffect(() => {
+    const isMobile = window.innerWidth < 768;
+    const targetTitle = isMobile ? "2" : "1";
     getAlbums()
-      .then(async (albums) => {
-        const fallback = guidaoAlbum.photos;
-        if (albums.length === 0) return fallback;
-        const data = await getAlbumPhotos(albums[0].id);
-        return data?.length ? data.reverse() : fallback;
+      .then((albums) => {
+        const target = albums.find((a) => a.title === targetTitle);
+        if (!target) return;
+        return getAlbumPhotos(target.id);
       })
       .then((data) => {
-        if (data?.length)
-          setPhotos(data.map((p) => ({ id: Number(p.id), url: p.url, caption: p.caption })));
+        if (data?.length) setPhotos(data.reverse());
       })
-      .catch(() => {
-        setPhotos(guidaoAlbum.photos.map((p) => ({ id: Number(p.id), url: p.url, caption: p.caption })));
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
