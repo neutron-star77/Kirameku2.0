@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+# 本地 Cloudflare 部署凭据（含 API Token，禁止入库）
+.cf.local.env

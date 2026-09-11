@@ -51,3 +51,6 @@ web/
 npm-debug.log*
 # Shirone 上游主题完整基线（由 scripts/sync-upstream.mjs 拉取，不入库）
 _upstream_shirone/
+
+# 本地部署凭据（含 token，禁止入库）
+.cf.local.env
