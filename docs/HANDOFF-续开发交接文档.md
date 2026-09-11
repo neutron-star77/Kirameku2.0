@@ -3,7 +3,7 @@
 > 生成时间：2026-09-12
 > 主工程：`F:\AI\projects\Kirameku2.0`
 > 目标：在既有工程上 **1:1 复刻 Astro 博客主题 Shirone**，说说/相册/友链三页采用 Kirameku 堆叠/拍立得动画，前后端分离，后台发布经 SSE 实时弹新。
-> 当前阶段：**P1 外壳移植已完成（2026-09-12，四组截图对照通过），待启动 P2（数据换血）**。
+> 当前阶段：**P1 外壳移植完成 + 新站已上线正式站（2026-09-12 用户拍板提前切换，四组截图对照通过），下一步 P2（数据换血）**。
 > 配套阅读：`docs/方案-v2.0-Shirone1比1复刻与SSE实时.md`（设计锁定）、`docs/开发过程与踩坑-二次开发指南.md`（T0/T1 历史）、`docs/DEPLOY-NAS.md`（后端部署）。
 
 ---
@@ -30,7 +30,14 @@ python --version # 3.11+
 
 ## 0.5 P1 完成记录（2026-09-12）
 
-**web 子仓 commit**：`c9cc7dc`（上会话遗留改动收尾）+ `e2fa995`（P1 外壳移植），本地领先 origin/main 2 个 commit，**未 push（等用户确认）**。
+**web 子仓 commit**：`c9cc7dc`（上会话遗留改动收尾）+ `e2fa995`（P1 外壳移植）+ `4a41b40`（/blog/* 旧链重定向），**已 push origin/main，正式站已切换**（见下）。
+
+**正式站切换记录（2026-09-12，用户拍板"旧的不要了"提前触发 P7 切换）**：
+- Pages 项目 `neutronstar-web` 的 production_branch 本来就是 main、域名直挂 neutronstar.fun/www，push main 即上线，无需改 Pages 配置。
+- 上线前补了 `public/_redirects`（`/blog/* → /posts/:splat 301`；HANDOFF 旧版写"已有该文件"是错误信息，实际不存在）。
+- 线上验证全过：根域 200（title=Shirone 新站）、www 301 → 根域、pages.dev 200、/archive//moments/ 200、首页 banner/swup 元素在位、BannerStage 打字动画正常运行。
+- **待补**：Pages 生产/预览环境变量 `PUBLIC_API_BASE=https://bff.neutronstar.fun` 未能通过 API 配置（token 无 Pages 项目改写权限，PATCH 返回 8000000），需用户在 Dashboard → Pages → neutronstar-web → Settings → Environment variables 手动添加；P1 站无 API 调用不阻塞，**P2 接 BFF 前必须配好**。
+- 注意：**正式站文章目前是 Shirone demo 内容（22 篇）**，P2 数据换血完成后才会换成真实文章；旧文章链接除 /blog/* 外不再保证可达（用户已确认弃用旧内容）。
 
 已完成：
 1. 装齐上游依赖 52 个包（svelte 5 / @astrojs/svelte 9.0.1 / @swup/astro / astro-expressive-code / astro-icon + @iconify-json 全家桶 / remark-rehype 管线 / katex / mermaid / @fancyapps/ui 等）。
@@ -700,7 +707,8 @@ cd ..\Kirameku-backend
 
 | 事项 | 状态 | 影响 |
 |:--|:--|:--|
-| web 子仓 2 个 commit（c9cc7dc/e2fa995）未 push | 待用户确认推送 | 代码备份 |
+| Pages 环境变量 PUBLIC_API_BASE 待 Dashboard 手动配 | P2 接 BFF 前必须 | P2 数据换血 |
+| 正式站内容为 demo 文章 | P2 换血解决 | 线上观感 |
 | `astro dev` 依赖优化器崩溃 | P2 修复 | 开发体验（当前用 build+preview 替代） |
 | Yozai 15MB TTF 直接入库 | P6 字体子集化解决 | 仓库体积 |
 | 音乐挂件运行时 stylus 编译与 workerd 冲突 | P6 启用前解决 | Shirone 全特性 |
@@ -709,7 +717,7 @@ cd ..\Kirameku-backend
 | fastimage 两级派生图批量生成 | 待用户确认 | P2 图片策略 |
 | CF Image Resizing 权益 | 未验证 | P2 图片策略（默认走预生成，不阻塞） |
 | 外仓 8 个 commit 未 push | 待用户选择是否推送 | 代码备份 |
-| 正式站切换时间 | P7 验收后 | 上线 |
+| 正式站切换 | ✅ 已完成（2026-09-12 提前切换，用户拍板） | 无 |
 | 旧 Vite SPA"NeutronStar 星舰" | 已下线 | 无 |
 | 旧 kirameku-fe 容器 | 已不存在 | 无 |
 | 文章加密功能 | P6，密钥管理需设计 | 安全 |
