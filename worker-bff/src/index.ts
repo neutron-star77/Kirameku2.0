@@ -139,6 +139,9 @@ async function proxyWithCache(c: any, upstream: string, tags: string[]) {
     method: "GET",
     headers: forwardHeaders(c.req.raw.headers),
     cf: { cacheTtlByStatus: { "200-299": 60, "404-499": 10, "500-599": 0 } },
+    // ⚠️ 必须 manual：默认 fetch 会跟随 3xx，导致后端的 302（例如
+    // /api/auth/github/login → GitHub 授权页）被"吃掉"，浏览器只看到 200 + 别人的页面。
+    redirect: "manual",
   } as RequestInit);
 
   const res = new Response(upstreamRes.body, upstreamRes);
@@ -345,6 +348,8 @@ app.on(["POST", "PUT", "PATCH", "DELETE"], "/api/*", async (c) => {
     method: c.req.method,
     headers: forwardHeaders(c.req.raw.headers),
     body,
+    // 同 proxyWithCache：3xx 原样透传，别替浏览器跟随
+    redirect: "manual",
   });
   return new Response(res.body, res);
 });
