@@ -1,9 +1,8 @@
 # Kirameku2.0 部署说明
 
-> 目标架构：前端 + 后端都跑在 NAS 的 Docker/venv，经 Cloudflare Tunnel 公网暴露，域名 neutronstar.fun
-> 更新日期：2026-09-08（前端后端均已上线）
->
-> 注：最初计划前端用 CF Pages，但因 Next 16 客户端动态路由 + 服务端路由在 CF 适配器（next-on-pages 已弃用、OpenNext 尚不兼容 Next 16）与静态导出下均无法承载，故前端改回 NAS 容器运行（保留全部 SSr/ISR/动态路由）。CF Pages 留待适配器支持 Next 16 后再迁回。
+> 目标架构：Astro 前端部署到 Cloudflare Pages，Worker BFF 做边缘代理与缓存，FastAPI + PostgreSQL 保留在 NAS。
+> 正式域名：`https://neutronstar.fun`；`https://www.neutronstar.fun` 301 重定向到根域。
+> 更新日期：2026-09-09（Astro Pages、Worker BFF、根域切换已完成）
 
 ## 一、端口清单（全部）
 
@@ -15,7 +14,7 @@
 | ~~520~~ | 旧 Typecho 站点（已下线 2026-09-08，文件保留 /share/Web/typecho） | NAS | 已停 |
 | **15432** | **PostgreSQL 容器**（kirameku-pg 容器内 5432） | NAS Docker | 仅本机 |
 | **8100** | **FastAPI 后端**（kirameku/backend） | NAS uvicorn | 仅 Tunnel |
-| **3000** | **Next.js 前端**（kirameku-fe 容器） | NAS Docker | 仅 Tunnel |
+| **3000** | 旧 Next.js 前端（保留源码，不再作为正式主站） | NAS Docker | 不再对外 |
 | 18080 | Novel 阅读服务（可选） | NAS | 仅内网 |
 | 443/80 | cloudflared Tunnel 出站 | NAS → CF | 出站连接 |
 
@@ -26,24 +25,25 @@
 ```
 浏览器 → https://neutronstar.fun (Cloudflare Tunnel)
               │
-              └── cloudflared (NAS) 按 Host 分流
-                    ├── neutronstar.fun / www → 127.0.0.1:3000  (Next 容器)
-                    │        └── rewrites: /api/*、/uploads/* → 隧道 → 8100
-                    └── kirameku-api.neutronstar.fun → 127.0.0.1:8100  (FastAPI)
-                                   └── PostgreSQL (Docker, 宿主机 15432)
+              ├── neutronstar.fun / www → Cloudflare Pages（Astro）
+              │        └── 前端请求 → bff.neutronstar.fun
+              ├── bff.neutronstar.fun → Cloudflare Worker BFF
+              │        └── kirameku-api.neutronstar.fun → NAS FastAPI
+              └── PostgreSQL (Docker, 宿主机 15432)
 ```
 
 ## 三、域名与 CF
 
 | 域名 | 用途 | 指向 |
 |---|---|---|
-| neutronstar.fun | 主站（前端） | Cloudflare Tunnel → NAS 3000 |
-| www.neutronstar.fun | 主站别名 | Cloudflare Tunnel → NAS 3000 |
+| neutronstar.fun | 主站（Astro） | Cloudflare Pages 项目 `neutronstar-web` |
+| www.neutronstar.fun | 主站别名 | Cloudflare Redirect Rule → 根域 |
+| bff.neutronstar.fun | 边缘 API | Cloudflare Worker `kirameku-bff` |
 | kirameku-api.neutronstar.fun | 后端 API | Cloudflare Tunnel → NAS 8100 |
 
-- Tunnel：`kirameku-api`（id `710bfae8-...`，token 托管模式），ingress 按 Host 分流到 3000/8100
-- CF Token：账户 d4add8ad...（已验证 active）
-- 旧部署待下线：阿里云宝塔旧站(boke.hiromu.top)、旧 CF Pages(neutronstar-front.pages.dev)、Vercel(www 已改)、520 Typecho 虚拟机
+- Tunnel：`kirameku-api`（id `710bfae8-...`，token 托管模式），仅负责 FastAPI 源站
+- Worker：`kirameku-bff`，自定义域名 `bff.neutronstar.fun`
+- 旧 Pages 项目 `neutronstar` 已删除；旧 Next/Vite 页面不再作为正式入口
 
 ## 四、NAS 环境（已确认）
 
@@ -91,5 +91,6 @@
 - [x] git 本地提交（含 .gitignore 排除密钥/构建产物）
 - [x] 推送 GitHub（源码约 11MB；live2d 213MB 不入库，源在 `F:\AI\projects\Kirameku`，仓库 neutron-star77/Kirameku2.0）
 - [x] 下线 NAS 旧 Typecho（520，文件保留，vhost 已注释 + 备份）
-- [ ] 下线云端旧部署（需账户凭据，本机无法触及）：boke.hiromu.top(阿里云宝塔)、CF Pages、Vercel
+- [x] 下线旧 CF Pages 项目 `neutronstar` 并迁移根域
+- [x] `www.neutronstar.fun` 统一 301 到 `neutronstar.fun`
 - [x] 台式机 pg_dump 时序备份（NAS cron 每日 03:30 保留 30 份；首份已于 2026-09-08 拉回 `backups/db/`）
