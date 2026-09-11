@@ -4,6 +4,7 @@ from sqlmodel import Session
 from app.deps import get_session
 from app.schemas import PostCreate, PostUpdate, PostOut, PostDetail
 from app.services import post_service
+from app.services.cache_invalidate import invalidate_cache
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/posts", tags=["文章"])
@@ -42,6 +43,7 @@ def create_post(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["posts"])
     return post_service.create_post(session, data)
 
 
@@ -52,16 +54,19 @@ def update_post(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["posts"])
     return post_service.update_post(session, post_id, data)
 
 
 @router.post("/{post_id}/like")
 def like_post(post_id: int, session: Session = Depends(get_session)):
+    invalidate_cache(["posts"])
     return post_service.toggle_like(session, post_id, unlike=False)
 
 
 @router.post("/{post_id}/unlike")
 def unlike_post(post_id: int, session: Session = Depends(get_session)):
+    invalidate_cache(["posts"])
     return post_service.toggle_like(session, post_id, unlike=True)
 
 
@@ -72,4 +77,5 @@ def delete_post(
     _: dict = Depends(get_current_user),
 ):
     post_service.delete_post(session, post_id)
+    invalidate_cache(["posts"])
     return {"ok": True}

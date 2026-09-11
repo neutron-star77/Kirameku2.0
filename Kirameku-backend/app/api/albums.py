@@ -4,6 +4,7 @@ from sqlmodel import Session
 from app.deps import get_session
 from app.schemas import AlbumCreate, AlbumUpdate, AlbumOut, PhotoCreate, PhotoOut
 from app.services import album_service
+from app.services.cache_invalidate import invalidate_cache
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/albums", tags=["相册"])
@@ -30,6 +31,7 @@ def create_album(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["albums"])
     return album_service.create_album(session, data)
 
 
@@ -40,6 +42,7 @@ def update_album(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["albums"])
     return album_service.update_album(session, album_id, data)
 
 
@@ -49,6 +52,7 @@ def delete_album(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["albums"])
     album_service.delete_album(session, album_id)
     return {"ok": True}
 
@@ -59,6 +63,7 @@ def add_photo(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["albums"])
     return album_service.add_photo(session, data)
 
 
@@ -69,4 +74,5 @@ def delete_photo(
     _: dict = Depends(get_current_user),
 ):
     album_service.delete_photo(session, photo_id)
+    invalidate_cache(["albums"])
     return {"ok": True}

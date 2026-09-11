@@ -4,6 +4,7 @@ from sqlmodel import Session
 from app.deps import get_session
 from app.schemas import MessageCreate, MessageOut, MessageAdminUpdate
 from app.services import message_service
+from app.services.cache_invalidate import invalidate_cache
 from app.deps import get_current_user
 from app.api.github_auth import _get_github_user, get_github_user_optional
 
@@ -38,6 +39,7 @@ def create_message(
         ip = request.headers.get("x-real-ip", "")
     if not ip:
         ip = request.client.host if request.client else ""
+    invalidate_cache(["messages"])
     return message_service.create_message(session, data, user, ip)
 
 
@@ -86,6 +88,7 @@ def update_message_status(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["messages"])
     return message_service.update_message_status(session, msg_id, data.status)
 
 

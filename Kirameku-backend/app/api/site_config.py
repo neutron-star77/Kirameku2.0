@@ -5,6 +5,7 @@ from sqlmodel import Session
 from app.deps import get_session
 from app.schemas import SiteConfigUpdate, SiteConfigOut
 from app.services import site_config_service
+from app.services.cache_invalidate import invalidate_cache
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/site-config", tags=["站点配置"])
@@ -40,6 +41,7 @@ def create_config(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["site"])
     return site_config_service.create_config(session, data.key, data.value, data.description)
 
 
@@ -50,6 +52,7 @@ def update_config(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["site"])
     return site_config_service.update_config(session, key, data)
 
 
@@ -59,6 +62,7 @@ def batch_update_config(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["site"])
     return site_config_service.batch_update_config(session, configs)
 
 
@@ -68,5 +72,6 @@ def delete_config(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["site"])
     site_config_service.delete_config(session, key)
     return {"ok": True}

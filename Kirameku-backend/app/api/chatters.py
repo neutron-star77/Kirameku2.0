@@ -8,6 +8,7 @@ from app.schemas import (
 )
 from app.schemas.comment import CommentAdminUpdate
 from app.services import chatter_service
+from app.services.cache_invalidate import invalidate_cache
 from app.deps import get_current_user
 from app.api.github_auth import get_github_user_optional
 
@@ -52,6 +53,7 @@ def create_chatter_comment(
         ip = request.headers.get("x-real-ip", "")
     if not ip:
         ip = request.client.host if request.client else ""
+    invalidate_cache(["moments"])
     return chatter_service.create_chatter_comment(session, data, user, ip)
 
 
@@ -74,6 +76,7 @@ def create_chatter(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["moments"])
     return chatter_service.create_chatter(session, data)
 
 
@@ -97,6 +100,7 @@ def update_chatter_comment_status(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["moments"])
     return chatter_service.update_chatter_comment_status(session, comment_id, data.status)
 
 
@@ -106,17 +110,20 @@ def delete_chatter_comment(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["moments"])
     chatter_service.delete_chatter_comment(session, comment_id)
     return {"ok": True}
 
 
 @router.post("/comments/{comment_id}/like", response_model=ChatterCommentOut)
 def like_chatter_comment(comment_id: int, session: Session = Depends(get_session)):
+    invalidate_cache(["moments"])
     return chatter_service.toggle_comment_like(session, comment_id, unlike=False)
 
 
 @router.post("/comments/{comment_id}/unlike", response_model=ChatterCommentOut)
 def unlike_chatter_comment(comment_id: int, session: Session = Depends(get_session)):
+    invalidate_cache(["moments"])
     return chatter_service.toggle_comment_like(session, comment_id, unlike=True)
 
 
@@ -129,11 +136,13 @@ def get_chatter(chatter_id: int, session: Session = Depends(get_session)):
 
 @router.post("/{chatter_id}/like")
 def like_chatter(chatter_id: int, session: Session = Depends(get_session)):
+    invalidate_cache(["moments"])
     return chatter_service.toggle_like(session, chatter_id, unlike=False)
 
 
 @router.post("/{chatter_id}/unlike")
 def unlike_chatter(chatter_id: int, session: Session = Depends(get_session)):
+    invalidate_cache(["moments"])
     return chatter_service.toggle_like(session, chatter_id, unlike=True)
 
 
@@ -144,6 +153,7 @@ def update_chatter(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["moments"])
     return chatter_service.update_chatter(session, chatter_id, data)
 
 
@@ -153,5 +163,6 @@ def delete_chatter(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["moments"])
     chatter_service.delete_chatter(session, chatter_id)
     return {"ok": True}

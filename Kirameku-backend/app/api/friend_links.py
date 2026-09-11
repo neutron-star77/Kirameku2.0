@@ -4,6 +4,7 @@ from sqlmodel import Session
 from app.deps import get_session
 from app.schemas import FriendLinkCreate, FriendLinkUpdate, FriendLinkOut
 from app.services import friend_link_service
+from app.services.cache_invalidate import invalidate_cache
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/friend-links", tags=["友链"])
@@ -28,6 +29,7 @@ def create_friend_link(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["friends"])
     return friend_link_service.create_friend_link(session, data)
 
 
@@ -38,6 +40,7 @@ def update_friend_link(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["friends"])
     return friend_link_service.update_friend_link(session, link_id, data)
 
 
@@ -47,5 +50,6 @@ def delete_friend_link(
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
+    invalidate_cache(["friends"])
     friend_link_service.delete_friend_link(session, link_id)
     return {"ok": True}

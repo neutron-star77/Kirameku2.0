@@ -29,6 +29,7 @@ app.use(
       "https://neutronstar-web.pages.dev",
       "https://bff.neutronstar.fun",
       "http://localhost:4321",
+      "http://127.0.0.1:4321",
       "http://localhost:5173",
       "http://localhost:3000",
     ],
@@ -45,6 +46,25 @@ app.get("/health", (c) => c.json({ status: "ok", layer: "bff" }));
 
 const CACHEABLE_STATUS = new Set([200, 203, 204, 300, 301, 404, 410]);
 
+/**
+ * 缓存条目剥离 CORS 头：Cache API 不按 Origin 分键，带 ACAO 的响应
+ * 会把 A 站点的 CORS 授权泄漏给 B 站点的访问者（浏览器拦截）。
+ * 剥掉后由最外层 hono cors 中间件按请求 Origin 重新注入。
+ */
+function stripCorsHeaders(res: Response): Response {
+  for (const h of [
+    "access-control-allow-origin",
+    "access-control-allow-headers",
+    "access-control-allow-methods",
+    "access-control-allow-credentials",
+    "access-control-expose-headers",
+    "vary",
+  ]) {
+    res.headers.delete(h);
+  }
+  return res;
+}
+
 /** 由路径推导缓存标签，后端也可用 x-cache-tags 覆盖 */
 function tagsForPath(path: string): string[] {
   const tags = new Set<string>();
@@ -53,10 +73,18 @@ function tagsForPath(path: string): string[] {
   if (path.startsWith("/api/albums")) tags.add("albums");
   if (path.startsWith("/api/posts")) tags.add("posts");
   if (path.startsWith("/api/categories") || path.startsWith("/api/tags")) tags.add("posts");
+  if (path.startsWith("/api/friend-links")) tags.add("friends");
+  if (path.startsWith("/api/site-config")) tags.add("site");
   if (path.startsWith("/bff/home")) {
     tags.add("posts");
     tags.add("moments");
     tags.add("albums");
+  }
+  if (path.startsWith("/bff/archive")) tags.add("posts");
+  if (path.startsWith("/bff/sidebar")) {
+    tags.add("posts");
+    tags.add("moments");
+    tags.add("site");
   }
   tags.add("all");
   return [...tags];
@@ -95,7 +123,7 @@ async function proxyWithCache(c: any, upstream: string, tags: string[]) {
 
   const hit = await cache.match(cacheKey);
   if (hit) {
-    const res = new Response(hit.body, hit);
+    const res = stripCorsHeaders(new Response(hit.body, hit));
     res.headers.set("X-Cache", "HIT");
     res.headers.set("X-Cache-Tags", tags.join(","));
     return res;
@@ -119,7 +147,7 @@ async function proxyWithCache(c: any, upstream: string, tags: string[]) {
   }
 
   if (CACHEABLE_STATUS.has(upstreamRes.status) && res.headers.get("Cache-Control")?.includes("s-maxage")) {
-    const toCache = res.clone();
+    const toCache = stripCorsHeaders(res.clone());
     toCache.headers.set("X-Cache-Tags", tags.join(","));
     c.executionCtx?.waitUntil(cache.put(cacheKey, toCache));
     c.executionCtx?.waitUntil(indexTags(c.env, c.req.url, tags));
@@ -139,7 +167,108 @@ function forwardHeaders(src: Headers): Headers {
 
 /* ------------------------------------------------------------------ *
  * 2. 聚合接口：把首屏需要的多个请求压成 1 个 RTT
+ *    响应写入 Cache API 并登记 tag 索引，发布后可被 /internal/revalidate 精确清除
  * ------------------------------------------------------------------ */
+
+/** 聚合口的统一缓存壳：命中即返；未命中构建 body 后写缓存 + tag 索引 */
+async function respondWithCache(
+  c: any,
+  tags: string[],
+  build: () => Promise<unknown>,
+  smaxage = 60
+) {
+  const cache = caches.default;
+  const cacheKey = new Request(c.req.url, { method: "GET" });
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    const res = stripCorsHeaders(new Response(hit.body, hit));
+    res.headers.set("X-Cache", "HIT");
+    res.headers.set("X-Cache-Tags", tags.join(","));
+    return res;
+  }
+  const data = (await build()) as Record<string, unknown>;
+  const body = JSON.stringify({ ...data, generatedAt: Date.now() });
+  const res = new Response(body, {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": `public, s-maxage=${smaxage}, stale-while-revalidate=600`,
+      "x-cache-tags": tags.join(","),
+    },
+  });
+  const toCache = stripCorsHeaders(res.clone());
+  c.executionCtx?.waitUntil(cache.put(cacheKey, toCache));
+  c.executionCtx?.waitUntil(indexTags(c.env, c.req.url, tags));
+  return res;
+}
+
+/** 归档/列表分页聚合：posts + total 一次拿齐 */
+app.get("/bff/archive", async (c) => {
+  const origin = c.env.BACKEND_ORIGIN;
+  const q = c.req.query();
+  const page = Math.max(1, Number(q.page || 1) || 1);
+  const size = Math.min(200, Math.max(1, Number(q.size || 10) || 10));
+  const params = new URLSearchParams({
+    status: "published",
+    page: String(page),
+    size: String(size),
+  });
+  if (q.tag) params.set("tag", q.tag);
+  if (q.category) params.set("category", q.category);
+
+  return respondWithCache(c, ["posts"], async () => {
+    const [posts, count] = await Promise.all([
+      fetchJSON(`${origin}/api/posts?${params}`),
+      fetchJSON(`${origin}/api/posts/count?status=published`),
+    ]);
+    const list = Array.isArray(posts) ? posts : [];
+    const total = Number((count as any)?.count ?? list.length) || list.length;
+    return { posts: list, total, page, size, lastPage: Math.max(1, Math.ceil(total / size)) };
+  });
+});
+
+/** 侧栏聚合：分类/标签/统计/日历分布/站点元信息，5 个回源压成 1 个 */
+app.get("/bff/sidebar", async (c) => {
+  const origin = c.env.BACKEND_ORIGIN;
+  return respondWithCache(c, ["posts", "moments", "site"], async () => {
+    const [categories, tags, posts, chatterCount, config] = await Promise.all([
+      fetchJSON(`${origin}/api/categories`),
+      fetchJSON(`${origin}/api/tags`),
+      fetchJSON(`${origin}/api/posts?status=published&page=1&size=200`),
+      fetchJSON(`${origin}/api/chatters/count?status=published`),
+      fetchJSON(`${origin}/api/site-config`),
+    ]);
+    const list = Array.isArray(posts) ? posts : [];
+    const words = list.reduce((s: number, p: any) => s + (p.word_count || 0), 0);
+    const times = list
+      .map((p: any) => Date.parse(p.published_at || p.created_at || "") || 0)
+      .filter(Boolean);
+    const updated = list
+      .map((p: any) => Date.parse(p.updated_at || p.published_at || "") || 0)
+      .filter(Boolean);
+    return {
+      categories: Array.isArray(categories) ? categories : [],
+      tags: Array.isArray(tags) ? tags : [],
+      stats: {
+        posts: list.length,
+        moments: Number((chatterCount as any)?.count ?? 0) || 0,
+        words,
+        categories: Array.isArray(categories) ? categories.length : 0,
+        tags: Array.isArray(tags) ? tags.length : 0,
+        since: times.length ? Math.min(...times) : null,
+        lastUpdated: updated.length ? Math.max(...updated) : null,
+      },
+      /** 日历/时间线分布：每篇文章的发布时间与字数 */
+      postCalendar: list.map((p: any) => ({
+        date: p.published_at || p.created_at,
+        words: p.word_count || 0,
+      })),
+      site: {
+        title: (config as any)?.site_title || null,
+        description: (config as any)?.site_description || null,
+      },
+    };
+  }, 120);
+});
 
 app.get("/bff/home", async (c) => {
   const origin = c.env.BACKEND_ORIGIN;
