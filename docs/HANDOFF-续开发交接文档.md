@@ -41,14 +41,21 @@ python --version # 3.11+
 8. **admin 面板**：站点配置页新增 site_images 图片链接编辑（横幅桌面/移动、头像、Logo）+ sidebar_widgets 开关标签对齐新主题 widget；admin/dist 已构建并 SMB 同步 NAS（挂载卷实时生效，未动容器）。
 9. **后端发布失效联动**：cache_invalidate 服务（HMAC→BFF revalidate）挂接 posts/chatters/albums/friend_links/messages/site_config 全部写接口；**SECRET 缺失时 no-op**，NAS 容器补 `REVALIDATE_SECRET`/`BFF_ORIGIN` 环境变量后秒级生效（放 P4 重建容器时做，TTL 60s 兜底）。
 
-**⚠️ 未决：正式站 SSR 上线被域名卡住**：
-- **根因**：@astrojs/cloudflare v14 输出 Workers 格式（dist/server/wrangler.json + assets），**Pages CI 不部署 SSR worker**——线上 Pages 只有静态部分，所有动态路由（/、/archive/、/posts/*）404；边缘还缓存着 P1 旧 HTML（title 是英文初版）。
-- **已完成**：新版前端 Worker 已 `wrangler deploy` 上传（名字 `neutronstar-web`，配置 `web/wrangler.deploy.json`，含 custom domain neutronstar.fun）；Pages 域名解绑/重绑流程已验证。
-- **卡点**：Worker 域接管需删 DNS 里 Pages 留下的 CNAME，**token 缺 Zone DNS Edit 权限**。
-- **恢复步骤（拿到 DNS Edit 权限后）**：删 `neutronstar.fun` 的 CNAME → `cd web && CLOUDFLARE_API_TOKEN=... npx wrangler@4 deploy -c wrangler.deploy.json` → CF 自动接管域名 → 验证 SSR。www 保持 zone 的 301 Redirect Rule 到根域，不用动。
-- 临时诊断路由 `web/src/pages/api-debug.astro` 待删除。
+**✅ 已解决（2026-09-12）：SSR 正式站真正上线，根域由 Workers 接管**
 
-**P2 验收状态**：本地全链路通过（真实文章/相册/说说/站名/侧栏/派生图截图验证）；线上等域名切换后复验。
+- **根因（已确认）**：@astrojs/cloudflare v14 输出 Workers 格式（`dist/server/wrangler.json` + `dist/client` assets），**Pages CI 只部署静态部分**——线上 `/`、`/archive/`、`/posts/*` 这类 `prerender=false` 路由全 404；其余静态页其实是 P2 构建（标题已是中文 + Neutronstar），唯独首页 200 是 **P1 旧 HTML 的边缘陈旧缓存**（`s-maxage=604800`，加 `?cb=` 破缓存即 404）。
+- **域名接管步骤（本次已执行）**：
+  1. `DELETE /accounts/{acc}/pages/projects/neutronstar-web/domains/{neutronstar.fun|www.neutronstar.fun}` 解除 Pages 自定义域；
+  2. 删除两条 `CNAME → neutronstar-web.pages.dev`（token 已补 Zone DNS Edit）；
+  3. `PUT /accounts/{acc}/workers/domains` 把 `neutronstar.fun` + `www.neutronstar.fun` 绑到 Worker `neutronstar-web`（CF 自动建 `AAAA 100::` 记录，与 bff 同款）；
+  4. `cd web && npx wrangler@4 deploy -c wrangler.deploy.json` 下发新版本（`wrangler.deploy.json` 的 routes 已补 www）；
+  5. `POST /zones/{zone}/purge_cache {"purge_everything":true}`。
+- **坑**：① Workers 自定义域接口是 **PUT**（POST 返回 405）；② `wrangler deploy` 带 `custom_domain` 路由时，若 DNS 上仍有同名 CNAME，会**静默只上传脚本不绑域**（"部署成功但域名还是旧站"的隐蔽根因）——必须先清 DNS；③ 删 Pages 域后到绑 Worker 域之间网站会短暂无 DNS。
+- **复验（2026-09-12，全部 `?cb=` 破缓存）**：`/` 200（title `Neutronstar - 煌めく — 一个个人博客`）、`/2/`、`/archive/`、`/moments/`、`/albums/`、`/friends/`、`/messages/`、`/about/`、`/novel/` 全 200；8 篇文章详情 `/posts/{革命,技术大停滞,大远征,图片压缩,深色霓虹与玻璃拟态设计笔记,用-astro-7-重铸星舰博客,bt-7274,44}` 全 200；首页文章列表已换成真实后端文章（旧 demo `/posts/guide/`、`/posts/encrypted-demo/` 已消失）；`www` 仍 301 → 根域。
+- **顺带修复**：SSR 化后根级 catch-all `[...page].astro` 会把**任意未知路径**（`/foobar-xyz/`、`/albums/1/`）渲染成首页 200（软 404）→ 已加守卫「只放行 `/` 与纯数字分页，其余直接 404」；删除临时诊断路由 `src/pages/api-debug.astro`（线上已验证 404）。
+- **遗留（不影响上线）**：`/rss.xml`、`/atom.xml` 仍 404（上游有 `rss.xml.ts`/`atom.xml.ts`/`llms.txt.ts`，本工程未移植 → P6 补）；`/api/albums` 返回的 slug 为空（`albums/[slug].astro` 是 `getStaticPaths(){return []}` 占位，实际相册走 island 内联展开）；首页残留 11 处 `Shirone` 只是 CSS 注释 + nav/footer 指向上游仓库 `LyraVoid/Shirone` 的链接（如需改成本站可改 `navBarConfig`/`footerConfig`）。
+
+**P2 验收状态**：✅ 本地与线上均已通过（线上见上条复验）。
 
 ---
 
@@ -105,7 +112,7 @@ python --version # 3.11+
 
 **坑**：
 - 改 `web/` 里的代码，`git status` 在外仓看不到任何变化——必须 `cd web` 后单独 `git add/commit/push`。
-- 外仓目前有 **8 个本地 commit 未 push**（`7421a81` 及之后）；web 子仓 `2a6aad6` 已 push，本地新增 `c9cc7dc`/`e2fa995` 未 push。
+- ~~外仓 8 个本地 commit 未 push~~ **✅ 已全部推送（2026-09-12 核查：外仓 `b0d34af`、web 子仓 `424e72d` 均已与 origin 同步，工作区干净）**。
 - `_upstream_shirone/` 是移植对照源，**不要在里面改代码**；升级上游用 `node scripts/sync-upstream.mjs main` 评估，确认后改 `PINNED_COMMIT`。
 
 ---
@@ -733,7 +740,11 @@ cd ..\Kirameku-backend
 | 事项 | 状态 | 影响 |
 |:--|:--|:--|
 | ~~Pages 环境变量~~ | ✅ 已配置（新 token + env_vars 字段） | 无 |
-| 正式站内容为 demo 文章 | P2 换血解决 | 线上观感 |
+| ~~正式站内容为 demo 文章~~ | ✅ 已解决（2026-09-12，线上 8 篇真实文章） | 无 |
+| ~~根域是 Pages 旧静态版 / 动态路由 404 / 首页旧缓存~~ | ✅ 已解决（Workers 自定义域接管 + purge，见 0.6） | 无 |
+| ~~未知路径被 catch-all 渲染成首页（软 404）~~ | ✅ 已修（`[...page].astro` 非数字参直接 404） | 无 |
+| `/rss.xml`、`/atom.xml`、`/llms.txt` 404 | P6 移植上游同名端点 | 订阅/SEO |
+| `/api/albums` 的 slug 为空 | 相册详情页未启用（走 island 内联展开），如需独立详情页要回填 slug | 功能完整性 |
 | `astro dev` 依赖优化器崩溃 | P2 修复 | 开发体验（当前用 build+preview 替代） |
 | Yozai 15MB TTF 直接入库 | P6 字体子集化解决 | 仓库体积 |
 | 音乐挂件运行时 stylus 编译与 workerd 冲突 | P6 启用前解决 | Shirone 全特性 |
