@@ -24,6 +24,33 @@ const form = ref({
   description: ""
 });
 const isEdit = ref(false);
+const defaultNavigation = JSON.stringify(
+  [
+    { id: "home", label: "首页", href: "/", visible: true, target: "_self" },
+    { id: "posts", label: "文章", href: "/posts", visible: true, target: "_self" },
+    { id: "archive", label: "归档", href: "/archive", visible: true, target: "_self" },
+    { id: "moments", label: "说说", href: "/moments", visible: true, target: "_self" },
+    { id: "albums", label: "相册", href: "/albums", visible: true, target: "_self" },
+    { id: "friends", label: "友链", href: "/friends", visible: true, target: "_self" },
+    { id: "messages", label: "杂谈", href: "/messages", visible: true, target: "_self" },
+    { id: "novel", label: "小说", href: "/novel", visible: true, target: "_self" },
+    { id: "about", label: "关于", href: "/about", visible: true, target: "_self" }
+  ],
+  null,
+  2
+);
+const defaultSidebarWidgets = JSON.stringify(
+  {
+    author: true,
+    explore: true,
+    announcement: true,
+    categories: true,
+    tags: true,
+    calendar: true
+  },
+  null,
+  2
+);
 
 const rules = {
   key: [{ required: true, message: "请输入配置键名", trigger: "blur" }],
@@ -69,6 +96,32 @@ function openAdd() {
   dialogTitle.value = "新增配置";
   form.value = { key: "", value: "", description: "" };
   dialogVisible.value = true;
+}
+
+async function initializeNavigation() {
+  try {
+    await updateSiteConfig("navigation", {
+      value: defaultNavigation,
+      description: "博客主站一级/二级导航 JSON 配置"
+    });
+    msg("导航配置已初始化，可继续编辑 navigation", { type: "success" });
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "初始化失败", { type: "error" });
+  }
+}
+
+async function initializeSidebarWidgets() {
+  try {
+    await updateSiteConfig("sidebar_widgets", {
+      value: defaultSidebarWidgets,
+      description: "新版主题侧边栏卡片显示开关 JSON 配置"
+    });
+    msg("侧边栏配置已初始化，可继续编辑 sidebar_widgets", { type: "success" });
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "初始化失败", { type: "error" });
+  }
 }
 
 function openEdit(row: SiteConfigItem) {
@@ -130,6 +183,38 @@ function formatValue(val: unknown): string {
   }
 }
 
+const sidebarLabels: Record<string, string> = {
+  author: "作者",
+  explore: "导航",
+  announcement: "公告",
+  categories: "分类",
+  tags: "标签",
+  calendar: "日历"
+};
+
+function sidebarState(row: SiteConfigItem): Record<string, boolean> {
+  try {
+    const value = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+    return { ...Object.fromEntries(Object.keys(sidebarLabels).map(key => [key, true])), ...value };
+  } catch {
+    return Object.fromEntries(Object.keys(sidebarLabels).map(key => [key, true]));
+  }
+}
+
+async function toggleSidebar(row: SiteConfigItem, key: string, value: boolean) {
+  const next = { ...sidebarState(row), [key]: value };
+  try {
+    await updateSiteConfig("sidebar_widgets", {
+      value: JSON.stringify(next),
+      description: "新版主题侧边栏卡片显示开关 JSON 配置"
+    });
+    msg(`${sidebarLabels[key]}卡片已${value ? "开启" : "关闭"}`, { type: "success" });
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "更新失败", { type: "error" });
+  }
+}
+
 onMounted(() => onSearch());
 </script>
 
@@ -139,7 +224,11 @@ onMounted(() => onSearch());
       <template #header>
         <div class="flex justify-between items-center">
           <span class="font-medium">站点配置</span>
-          <el-button type="primary" @click="openAdd">新增配置</el-button>
+          <div class="flex gap-2">
+            <el-button @click="initializeNavigation">初始化导航配置</el-button>
+            <el-button @click="initializeSidebarWidgets">初始化侧边栏配置</el-button>
+            <el-button type="primary" @click="openAdd">新增配置</el-button>
+          </div>
         </div>
       </template>
 
@@ -152,7 +241,17 @@ onMounted(() => onSearch());
         table-layout="auto"
       >
         <template #value="{ row }">
-          <div class="text-left max-w-xs truncate" :title="formatValue(row.value)">
+          <div v-if="row.key === 'sidebar_widgets'" class="flex flex-wrap gap-3 text-left">
+            <label v-for="(label, key) in sidebarLabels" :key="key" class="inline-flex items-center gap-1.5 text-xs">
+              <el-switch
+                :model-value="sidebarState(row)[key]"
+                size="small"
+                @change="(value: boolean) => toggleSidebar(row, key, value)"
+              />
+              {{ label }}
+            </label>
+          </div>
+          <div v-else class="text-left max-w-xs truncate" :title="formatValue(row.value)">
             {{ formatValue(row.value) }}
           </div>
         </template>
@@ -198,8 +297,11 @@ onMounted(() => onSearch());
             v-model="form.value"
             type="textarea"
             :rows="3"
-            placeholder="配置值"
+            :placeholder="form.key === 'navigation' ? '填写一级/二级菜单 JSON，支持 visible、sort、target、children' : '配置值'"
           />
+          <div v-if="form.key === 'navigation'" class="mt-1 text-xs text-gray-500">
+            二级菜单示例：{"children":[{"id":"child","label":"子菜单","href":"/path"}]}
+          </div>
         </el-form-item>
         <el-form-item label="说明" prop="description">
           <el-input

@@ -6,6 +6,31 @@ from fastapi import HTTPException
 from app.models import SiteConfig
 from app.schemas import SiteConfigUpdate
 
+DEFAULT_NAVIGATION = [
+    {"id": "home", "label": "首页", "href": "/", "visible": True, "target": "_self"},
+    {"id": "posts", "label": "文章", "href": "/posts", "visible": True, "target": "_self"},
+    {"id": "archive", "label": "归档", "href": "/archive", "visible": True, "target": "_self"},
+    {"id": "moments", "label": "说说", "href": "/moments", "visible": True, "target": "_self"},
+    {"id": "albums", "label": "相册", "href": "/albums", "visible": True, "target": "_self"},
+    {"id": "friends", "label": "友链", "href": "/friends", "visible": True, "target": "_self"},
+    {"id": "messages", "label": "杂谈", "href": "/messages", "visible": True, "target": "_self"},
+    {"id": "novel", "label": "小说", "href": "/novel", "visible": True, "target": "_self"},
+    {"id": "about", "label": "关于", "href": "/about", "visible": True, "target": "_self"},
+]
+
+DEFAULT_PUBLIC_CONFIG = {
+    "navigation": DEFAULT_NAVIGATION,
+    "music_widget": {"enabled": False, "title": "音乐", "subtitle": "悬浮播放器", "url": ""},
+    "sidebar_widgets": {
+        "author": True,
+        "explore": True,
+        "announcement": True,
+        "categories": True,
+        "tags": True,
+        "calendar": True,
+    },
+}
+
 
 def get_all_config(session: Session) -> dict[str, any]:
     """返回所有配置的 key-value 字典。"""
@@ -58,6 +83,8 @@ def delete_config(session: Session, key: str):
 def get_config(session: Session, key: str) -> any:
     row = session.exec(select(SiteConfig).where(SiteConfig.key == key)).first()
     if not row:
+        if key in DEFAULT_PUBLIC_CONFIG:
+            return DEFAULT_PUBLIC_CONFIG[key]
         raise HTTPException(status_code=404, detail=f"配置 {key} 不存在")
     try:
         return json.loads(row.value)
