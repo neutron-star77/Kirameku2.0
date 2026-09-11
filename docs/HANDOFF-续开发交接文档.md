@@ -3,7 +3,7 @@
 > 生成时间：2026-09-12
 > 主工程：`F:\AI\projects\Kirameku2.0`
 > 目标：在既有工程上 **1:1 复刻 Astro 博客主题 Shirone**，说说/相册/友链三页采用 Kirameku 堆叠/拍立得动画，前后端分离，后台发布经 SSE 实时弹新。
-> 当前阶段：**P0 基线已完成，待启动 P1（外壳移植原型）**。
+> 当前阶段：**P1 外壳移植已完成（2026-09-12，四组截图对照通过），待启动 P2（数据换血）**。
 > 配套阅读：`docs/方案-v2.0-Shirone1比1复刻与SSE实时.md`（设计锁定）、`docs/开发过程与踩坑-二次开发指南.md`（T0/T1 历史）、`docs/DEPLOY-NAS.md`（后端部署）。
 
 ---
@@ -28,6 +28,38 @@ python --version # 3.11+
 
 ---
 
+## 0.5 P1 完成记录（2026-09-12）
+
+**web 子仓 commit**：`c9cc7dc`（上会话遗留改动收尾）+ `e2fa995`（P1 外壳移植），本地领先 origin/main 2 个 commit，**未 push（等用户确认）**。
+
+已完成：
+1. 装齐上游依赖 52 个包（svelte 5 / @astrojs/svelte 9.0.1 / @swup/astro / astro-expressive-code / astro-icon + @iconify-json 全家桶 / remark-rehype 管线 / katex / mermaid / @fancyapps/ui 等）。
+2. `astro.config.mjs` 对齐上游（swup/icon/expressiveCode/svelte/mdx/sitemap + markdown processor + 音乐虚拟模块插件），保留 cloudflare 适配器与 react()。
+3. 整体移植 `src/`：layouts、15 个样式、35 个配置、constants、i18n、~90 个 utils、plugins、integration、types、data、user、assets（15MB Yozai 字体）、**上游 demo 内容**（22 篇文章 + 5 条说说 + snippets/spec，P1 直接当 mock 数据用，P2 换血）、public 资产（banner/favicon/logo/anime/audio）。
+4. 首页 `pages/[...page].astro` 照搬上游（getSortedPosts 分页 /、/2/、/3/）；其余 10 个页面改 MainGridLayout 薄壳（islands 保留未挂，P2/P3 接）。
+5. 拆除手搓件：HomeHero、AlbumCarousel、Base/Page、SiteHeader/SiteFooter/ThemeToggle、Sidebar/AuthorCard/Calendar、SurfaceCard/PageHeader、global.css/animations.css。
+6. 构建 11 页全过；`astro preview`（workerd）本地 vs `shirone.mysqil.com` 四组截图（桌面/移动 × 亮/暗）逐项一致（仅 Stats 数字内容性微差）；Swup 容器替换验证通过（无整页刷新）。
+7. 图标生成：`node _upstream_shirone/scripts/icons/generate-local-icons.mjs`（在 web 下执行）→ `src/generated/local-icon-collections.ts`（已入库；web 未拷上游 scripts，升级上游后需重跑）。
+
+**P1 偏离上游的部分（都有注释）**：
+- `siteConfig.site` → `https://neutronstar.fun`
+- `fontConfig.subsetting.enable = false`（P6 启用，启用后构建前必须跑 fonts:subset）
+- `musicConfig.enable = false`（P6 启用；音乐挂件要运行时编译 stylus，workerd 无 fs 会炸，启用前必须解决）
+- 字体加载离线化：`astro.config.mjs` 里 `fontsourceCssToLocalVariants()` 解析本地 @fontsource 包 CSS → local provider（fontsource 远程 provider 构建期要连 jsdelivr，大陆不稳）；全部字体角色 `optimizedFallbacks: false`
+- `imageService: { build: "compile", runtime: "passthrough" }`（纯 passthrough 的 `/_image` 端点在纯预渲染部署下 404）
+- `src/integration/ssr-node-shims.ts` 加固（workerd 预渲染 chunk 的 `import.meta.url` 可能 undefined，回退 `file:///` 基准）
+- `src/plugins/rehype-markdown-images.mjs` sharp 改惰性 import + 降级（原生模块进 workerd 直接炸）
+
+**新坑（P2 前必读）**：
+- **Astro 7 没有 `output: "hybrid"`**（Astro 5 就移除了）：`output: "static"` + adapter 就是「默认预渲染 + 按页 `export const prerender = false`」，效果等价旧 hybrid。
+- **Cloudflare adapter 的预渲染在 workerd（miniflare）里跑**：原生模块（sharp 等）和运行时读 fs 的代码都会炸；入口 chunk 的 `import.meta.url` 可能是 undefined。
+- **占位动态路由**必须 `export function getStaticPaths() { return []; }`，否则构建报 GetStaticPathsRequired。
+- **`astro dev` 当前不可用**：rolldown 依赖扫描对 ImageWrapper.astro 误报 parse error（非致命），但 SSR 依赖优化器（deps_ssr/base-*.js）缓存反复损坏导致 dev 崩溃，清 `.vite` 缓存无效。P1/P2 期间用 `pnpm run build && pnpm run preview`（workerd 本地跑产物，端口同 4321）替代；P2 再修 dev。
+- miniflare 偶发 `fetch failed / bad port`（inspector 代理竞态）：设 `NO_PROXY=127.0.0.1,localhost` 重试即可。
+- 构建期图片 compile 模式下个别已压缩 webp 反而变大（如 extreme-3 1.6MB→3.8MB），P2 图片策略时复核 q 参数。
+
+---
+
 ## 1. 多仓关系（最容易踩的坑）
 
 本项目是**三个独立 git 仓库 + 一个图床仓**的组合，外仓不跟踪前端子仓：
@@ -41,7 +73,7 @@ python --version # 3.11+
 
 **坑**：
 - 改 `web/` 里的代码，`git status` 在外仓看不到任何变化——必须 `cd web` 后单独 `git add/commit/push`。
-- 外仓目前有 **7 个本地 commit 未 push**（`7421a81` 及之后）；web 子仓最近 commit `2a6aad6`，是否已 push 需自行 `git -C web status` 确认。
+- 外仓目前有 **8 个本地 commit 未 push**（`7421a81` 及之后）；web 子仓 `2a6aad6` 已 push，本地新增 `c9cc7dc`/`e2fa995` 未 push。
 - `_upstream_shirone/` 是移植对照源，**不要在里面改代码**；升级上游用 `node scripts/sync-upstream.mjs main` 评估，确认后改 `PINNED_COMMIT`。
 
 ---
@@ -270,7 +302,7 @@ python --version # 3.11+
 
 ## 10. 后续开发任务（P1-P7 工单）
 
-### P1：外壳移植原型（当前待启动）
+### P1：外壳移植原型（✅ 已完成 2026-09-12，见第 0.5 节）
 **目标**：首页与 Shirone 演示站 1:1 视觉一致（亮/暗 × 桌面/移动四组对照）。
 
 **步骤**：
@@ -668,11 +700,15 @@ cd ..\Kirameku-backend
 
 | 事项 | 状态 | 影响 |
 |:--|:--|:--|
+| web 子仓 2 个 commit（c9cc7dc/e2fa995）未 push | 待用户确认推送 | 代码备份 |
+| `astro dev` 依赖优化器崩溃 | P2 修复 | 开发体验（当前用 build+preview 替代） |
+| Yozai 15MB TTF 直接入库 | P6 字体子集化解决 | 仓库体积 |
+| 音乐挂件运行时 stylus 编译与 workerd 冲突 | P6 启用前解决 | Shirone 全特性 |
+| 构建期个别图片 compile 后变大 | P2 图片策略复核 | 性能 |
 | GitHub OAuth App 凭据 | 待用户创建 | P5 阻塞 |
 | fastimage 两级派生图批量生成 | 待用户确认 | P2 图片策略 |
 | CF Image Resizing 权益 | 未验证 | P2 图片策略（默认走预生成，不阻塞） |
-| 外仓 7 个 commit 未 push | 待用户选择是否推送 | 代码备份 |
-| web 子仓 commit 是否 push | 待确认 | 代码备份 |
+| 外仓 8 个 commit 未 push | 待用户选择是否推送 | 代码备份 |
 | 正式站切换时间 | P7 验收后 | 上线 |
 | 旧 Vite SPA"NeutronStar 星舰" | 已下线 | 无 |
 | 旧 kirameku-fe 容器 | 已不存在 | 无 |
