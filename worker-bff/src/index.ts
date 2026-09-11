@@ -7,6 +7,10 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { RealtimeRoom, type RealtimeEvent } from "./realtime-room";
+
+// Durable Object 必须从 Worker 入口模块导出，wrangler 才能注册 class
+export { RealtimeRoom };
 
 type Env = {
   BACKEND_ORIGIN: string;
@@ -16,6 +20,8 @@ type Env = {
   REVALIDATE_SECRET?: string;
   /** tag → url[] 索引（免费计划没有原生 cache-tag，用 KV 自建） */
   CACHE_TAGS?: KVNamespace;
+  /** SSE 扇出房间（P4 实时）：每个频道一个 DO 实例 */
+  REALTIME_ROOM?: DurableObjectNamespace;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -344,8 +350,91 @@ app.on(["POST", "PUT", "PATCH", "DELETE"], "/api/*", async (c) => {
 });
 
 /* ------------------------------------------------------------------ *
- * 5. 失效：后台发布 → HMAC webhook → 按 tag/URL 清边缘缓存
+ * 5. 失效：后台发布 → HMAC webhook → 按 tag/URL 清边缘缓存 + SSE 广播
  * ------------------------------------------------------------------ */
+
+/**
+ * 失效 tag → 实时频道映射。
+ * 前端 EventSource 订阅 `/sse/<channel>`，事件到达后 SWR 重校验对应 key。
+ * 内容变更同时扇给 `home`（聚合口首页）与 `all`（全部页面的兜底订阅）。
+ */
+const TAG_CHANNELS: Record<string, string[]> = {
+  posts: ["posts"],
+  moments: ["moments"],
+  albums: ["albums"],
+  friends: ["friends"],
+  messages: ["messages"],
+  comments: ["comments"],
+  site: ["nav"],
+};
+
+function channelsForTags(tags: string[]): string[] {
+  const set = new Set<string>(["home", "all"]);
+  for (const tag of tags) {
+    for (const ch of TAG_CHANNELS[tag] || []) set.add(ch);
+  }
+  return [...set];
+}
+
+/**
+ * DO 房间版本号（逃生舱）。
+ *
+ * 频道名 → DO 名字会带上这个前缀；万一某个实例被写僵（例如历史遗留的卡死客户端），
+ * 直接 bump 版本号就能让所有客户端连到全新实例，不用等平台回收。
+ */
+const ROOM_VERSION = "v2";
+
+function roomStub(env: Env, channel: string): DurableObjectStub | null {
+  const ns = env.REALTIME_ROOM;
+  if (!ns) return null;
+  return ns.get(ns.idFromName(`${ROOM_VERSION}:${channel}`));
+}
+
+/** 向指定频道的 DO 实例投递事件；返回各房间当前在线连接数之和 */
+async function broadcastToChannels(
+  env: Env,
+  channels: string[],
+  payload: { tags: string[]; urls: string[] }
+) {
+  const event: RealtimeEvent = {
+    channel: "all",
+    type: "change",
+    action: "published",
+    id: payload.urls[0] ?? null,
+    at: Date.now(),
+  };
+
+  let delivered = 0;
+  await Promise.all(
+    channels.map(async (channel) => {
+      try {
+        const stub = roomStub(env, channel);
+        if (!stub) return;
+        const res = await stub.fetch("https://room/broadcast", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...event, channel }),
+        });
+        const data = (await res.json()) as { delivered?: number };
+        delivered += Number(data?.delivered ?? 0);
+      } catch {
+        // 实时通道是增强能力，失败就退化为 SWR 兜底，不影响发布
+      }
+    })
+  );
+  return delivered;
+}
+
+app.get("/sse/:channel", async (c) => {
+  // 频道名只允许小写字母/数字/连字符，避免造出任意 DO 名字
+  const channel = (c.req.param("channel") || "all").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const stub = roomStub(c.env, channel);
+  if (!stub) return c.json({ error: "realtime not configured" }, 503);
+
+  return stub.fetch(`https://room/subscribe?channel=${encodeURIComponent(channel)}`, {
+    headers: { accept: "text/event-stream" },
+  });
+});
 
 app.post("/internal/revalidate", async (c) => {
   const secret = c.env.REVALIDATE_SECRET;
@@ -371,7 +460,24 @@ app.post("/internal/revalidate", async (c) => {
     if (await cache.delete(new Request(u, { method: "GET" }))) purged += 1;
   }
 
-  return c.json({ purged, tags: payload.tags || [], urls: [...targets].length });
+  // 清完缓存立刻扇出，在线页面无需等 TTL 即可拉新。
+  // ⚠️ 广播走 waitUntil 异步发出，**不阻塞** webhook 响应：后端 httpx 只有 3s 超时，
+  //    DO 冷启动或某个房间异常不能让整条"发布→失效"链路跟着挂。
+  const payloadTags = payload.tags || [];
+  const channels = channelsForTags(payloadTags);
+  const broadcastPromise = broadcastToChannels(c.env, channels, {
+    tags: payloadTags,
+    urls: [...targets],
+  });
+  c.executionCtx?.waitUntil(broadcastPromise.catch(() => {}));
+
+  return c.json({
+    purged,
+    channels,
+    tags: payloadTags,
+    urls: [...targets].length,
+    realtime: "queued",
+  });
 });
 
 async function readTagUrls(env: Env, tag: string): Promise<string[]> {

@@ -20,5 +20,18 @@ PROXY_PREFIXES = "/api,/uploads,/reader3"
 binding = "CACHE_TAGS"
 id = "4959a742fe4d44dbbc0ba8c200bea694"
 
+# ---------------------------------------------------------------------------
+# P4 实时：SSE 扇出房间（一个频道一个 Durable Object 实例）
+# 免费计划必须用 SQLite 存储后端（new_sqlite_classes），KV 后端 DO 要付费计划。
+# 迁移 tag 一旦上线不可改，后续新增 class 只能追加新的 [[migrations]] 块。
+# ---------------------------------------------------------------------------
+[[durable_objects.bindings]]
+name = "REALTIME_ROOM"
+class_name = "RealtimeRoom"
+
+[[migrations]]
+tag = "v1-add-realtime-room"
+new_sqlite_classes = ["RealtimeRoom"]
+
 [observability]
 enabled = true
