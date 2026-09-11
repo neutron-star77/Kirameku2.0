@@ -3,7 +3,7 @@
 > 生成时间：2026-09-12
 > 主工程：`F:\AI\projects\Kirameku2.0`
 > 目标：在既有工程上 **1:1 复刻 Astro 博客主题 Shirone**，说说/相册/友链三页采用 Kirameku 堆叠/拍立得动画，前后端分离，后台发布经 SSE 实时弹新。
-> 当前阶段：**P1 外壳移植完成 + 新站已上线正式站（2026-09-12 用户拍板提前切换，四组截图对照通过），下一步 P2（数据换血）**。
+> 当前阶段：**P0/P1/P2 完成，正式站已由 Workers（SSR）接管且内容是真实数据；P4 实时（SSE + Durable Object）代码与 BFF/前端已上线，剩 NAS 后端容器重建与浏览器最终验收（见 0.7）**。
 > 配套阅读：`docs/方案-v2.0-Shirone1比1复刻与SSE实时.md`（设计锁定）、`docs/开发过程与踩坑-二次开发指南.md`（T0/T1 历史）、`docs/DEPLOY-NAS.md`（后端部署）。
 
 ---
@@ -25,6 +25,34 @@ python --version # 3.11+
 ```
 
 **绝对不要做的事**：不要动正式站 `https://neutronstar.fun`；不要把 `.env` / `.dev.vars` / `.cf.local.env` / token 提交进 git；不要用 `scp`/`ssh "cat >"` 写 NAS 文件（走 SMB）；不要删 PostgreSQL 数据卷和 `kirameku_uploads` 卷。
+
+---
+
+## 0.7 P4 实时（SSE + Durable Object）完成记录（2026-09-12）
+
+**目标**：后台发布 → 在线页面秒弹新，零 rebuild。
+
+**实现（BFF + 前端 + 后端三侧）**：
+
+1. **BFF 新增 `src/realtime-room.ts`（`RealtimeRoom` DO）**：一个频道一个实例（`idFromName("v2:<channel>")`），内存维护该频道的 SSE 写入端集合；路由 `/subscribe`、`/broadcast`、`/status`；25s 心跳；**每次写入带 2s 超时**（见踩坑 1）。
+2. **`wrangler.toml`**：加 `[[durable_objects.bindings]] REALTIME_ROOM` + `[[migrations]] tag="v1-add-realtime-room" new_sqlite_classes=["RealtimeRoom"]`。⚠️ 免费计划必须用 `new_sqlite_classes`（KV 后端 DO 要付费）。wrangler 升到 4。
+3. **`src/index.ts`**：新增 `GET /sse/:channel`（频道名净化后转发给对应 DO）；`/internal/revalidate` 清缓存后按 `TAG_CHANNELS`（posts/moments/albums/friends/messages/comments/site→nav，恒定含 `home`+`all`）**用 `waitUntil` 异步广播**，webhook 响应回到亚秒级。
+4. **前端 `web/src/lib/realtime.ts`**：`window` 上的全局 hub（全站唯一 EventSource + 指数退避重连 + 引用计数与 5s 宽限关闭），对外只暴露 `useRealtimeRefresh(prefixes[, onChange])`；已接入 PostList / MomentsList / AlbumGrid / MessagesList / HomeFeed / FriendsGrid（非 SWR，走 onChange）/ NavigationIsland（同上）。
+5. **后端**：`cache_invalidate.py` 早已挂在全部写接口（posts/chatters/albums/friend_links/messages/site_config），本次只补容器环境变量。
+
+**踩坑（都值得记住）**：
+
+1. **DO 里 `writer.write()` 不带超时会把整个实例写僵**：客户端"连上但不读"时 write 永不 resolve → 该 DO 后续请求全部排队 → BFF 的 `/internal/revalidate` 跟着 hang（实测 40s+ 超时，后端 httpx 3s 超时直接失败）。修法：逐条 `Promise.race` 2s 超时并摘除死连接 + 广播改 `waitUntil` 异步。另留 `ROOM_VERSION` 前缀当逃生舱（bump 即让所有客户端连到全新实例，不必等平台回收）。
+2. **Astro island 会各自打包一份依赖**：产物里 `use-swr-*.js` 存在两份不同 chunk → "模块级单例 EventSource"会按 island 多开连接，且模块级 `mutate` 动不了别的 island 的 SWR 缓存。修法：连接放 `window.__kiramekuRealtimeHub`，重校验交给各 island 自己的 `useRealtimeRefresh`。曾尝试"布局里挂一个 bridge island"，结果 `client:load` 的 React island 在预渲染期报 `Unable to render RealtimeBridge!`（构建直接失败）→ 该方案已废弃并删除组件。
+3. **`wrangler secret put` 走管道 stdin 会把结尾换行一起存进去**：导致本地 `.dev.vars` 与线上不一致、HMAC 永远 401。改用 CF API 确定性写入：`PUT /accounts/{acc}/workers/scripts/{name}/secrets` body `{name,text,type:"secret_text"}`。本次已轮换 REVALIDATE_SECRET（新值在 `worker-bff/.dev.vars`，线上同步）。
+4. **后端镜像没有随 P2 代码重建**：容器内连 `app/services/cache_invalidate.py` 都不存在（`grep -c invalidate_cache app/api/chatters.py` = 0），所以"发布→清缓存"一直没生效（表现为发布后缓存仍 HIT）。处理：SMB 同步源码 → NAS 重新 `docker build`（已产出新镜像 `sha256:2a758f07…`）。
+
+**当前状态**：
+
+- ✅ BFF 已部署（DO 绑定正常，version `4ce33881`）：`/sse/all` 实测首帧 `retry: 3000` + `: connected channel=all`；`/internal/revalidate` 验签通过，返回 `{"purged":1,"channels":["home","all","moments"],"urls":7,"realtime":"queued"}`，**耗时 0.72s**；发布后 `X-Cache` 实测 MISS、预热后 HIT。
+- ✅ 前端已部署（version `8845fef7`）：产物含 `realtime.*.js`（`/sse/` + `kiremekuRealtimeHub` 均在其中），首页/归档/说说/相册/友链/留言全部 200。
+- ⛔ **待办 1（卡在审批）**：NAS 后端容器尚未用新镜像重建 —— 重建后 `cache_invalidate` 才会真正发出 webhook，实时链路才算通到后端。命令已就绪（只 `stop`/`rm`/`run` 应用容器，**不碰 kirameku-pg 与 kirameku_uploads / kirameku_pgdata 卷**），环境变量需含 `REVALIDATE_SECRET`（值同 `worker-bff/.dev.vars`）、`BFF_ORIGIN=https://bff.neutronstar.fun`、`FRONTEND_ORIGIN=https://neutronstar.fun`。
+- ⏳ **待办 2**：浏览器端最终验收 —— 开两个标签页，后台发一条说说，看 `/moments` 是否 1s 内以原入场动画插入新卡片；再改一次导航配置看菜单是否即时刷新。
 
 ---
 
@@ -743,6 +771,10 @@ cd ..\Kirameku-backend
 | ~~正式站内容为 demo 文章~~ | ✅ 已解决（2026-09-12，线上 8 篇真实文章） | 无 |
 | ~~根域是 Pages 旧静态版 / 动态路由 404 / 首页旧缓存~~ | ✅ 已解决（Workers 自定义域接管 + purge，见 0.6） | 无 |
 | ~~未知路径被 catch-all 渲染成首页（软 404）~~ | ✅ 已修（`[...page].astro` 非数字参直接 404） | 无 |
+| P4 实时后端侧（NAS 容器仍是旧镜像） | ⛔ 待重建容器（新镜像已 build 完成，命令已备好） | 后台发布不会触发 webhook |
+| P4 浏览器端"秒弹新"验收 | ⏳ 待人工验收（双标签页发说说） | 体验确认 |
+| ~~NAS 后端镜像落后于源码（缺 cache_invalidate）~~ | ✅ 已重新 `docker build` | 无 |
+| ~~`wrangler secret put` 存入带换行的密钥~~ | ✅ 已改用 CF API 重写并轮换 | 无 |
 | `/rss.xml`、`/atom.xml`、`/llms.txt` 404 | P6 移植上游同名端点 | 订阅/SEO |
 | `/api/albums` 的 slug 为空 | 相册详情页未启用（走 island 内联展开），如需独立详情页要回填 slug | 功能完整性 |
 | `astro dev` 依赖优化器崩溃 | P2 修复 | 开发体验（当前用 build+preview 替代） |
