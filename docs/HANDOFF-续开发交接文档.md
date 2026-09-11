@@ -28,6 +28,30 @@ python --version # 3.11+
 
 ---
 
+## 0.6 P2 数据换血完成记录（2026-09-12）
+
+**已完成**：
+1. **BFF 聚合口**（已部署）：`/bff/archive`（分页+总数）、`/bff/sidebar`（分类/标签/统计/日历聚合），带 Cache API + tag 索引，可被 revalidate 精确清除。
+2. **修复 BFF 缓存 CORS 污染**：Cache API 不按 Origin 分键，缓存条目剥离 `access-control-*`/`vary` 头由 cors 中间件按请求重新注入；CORS 白名单补 `http://127.0.0.1:4321`。
+3. **前端数据层换血**：`lib/server/api.ts`（SSR 回源+内存缓存）、content-utils/site-stats 重写为 API 取数（适配成原版 CollectionEntry 鸭子形状，组件零改动）、删除上游 demo content 与 content.config.ts。
+4. **页面 SSR 化**：首页 `[...page]`/归档/文章详情 `prerender=false`（文章 markdown 经 siteMarkdownProcessor 服务端渲染）；说说/友链/留言/相册 = 静态壳 + islands 客户端 SWR。
+5. **站点覆盖层** `utils/site-overrides.ts`：site_title/site_description/site_images/sidebar_widgets 全部后台可配。站名已改 **Neutronstar**（PG site_config + profileConfig）。
+6. **相册 234 张导入后端**（6 册×39，幂等脚本 `Kirameku-backend/scripts/oneoff/import_fastimage.py` 直连 NAS PG 15432；真实 DATABASE_URL 已存 `backups/rescue-from-duplicates/nas-db.env.txt`，gitignored）。
+7. **两级派生图落地**：`fastimage/scripts/derive_images.py` 从鬼刀原图（8450×4263 等）LANCZOS 一次降采样，thumbs 800/q72（22-90KB）+ full 1600/q74（56-296KB），已 push fastimage（29b8d0a）；AlbumGrid 三档 srcset。**坑：jsDelivr 的 cdn/fastly 子域现对 gh 资源 301 到 raw，gcore.jsdelivr.net 直出——派生 URL 统一走 gcore**。
+8. **admin 面板**：站点配置页新增 site_images 图片链接编辑（横幅桌面/移动、头像、Logo）+ sidebar_widgets 开关标签对齐新主题 widget；admin/dist 已构建并 SMB 同步 NAS（挂载卷实时生效，未动容器）。
+9. **后端发布失效联动**：cache_invalidate 服务（HMAC→BFF revalidate）挂接 posts/chatters/albums/friend_links/messages/site_config 全部写接口；**SECRET 缺失时 no-op**，NAS 容器补 `REVALIDATE_SECRET`/`BFF_ORIGIN` 环境变量后秒级生效（放 P4 重建容器时做，TTL 60s 兜底）。
+
+**⚠️ 未决：正式站 SSR 上线被域名卡住**：
+- **根因**：@astrojs/cloudflare v14 输出 Workers 格式（dist/server/wrangler.json + assets），**Pages CI 不部署 SSR worker**——线上 Pages 只有静态部分，所有动态路由（/、/archive/、/posts/*）404；边缘还缓存着 P1 旧 HTML（title 是英文初版）。
+- **已完成**：新版前端 Worker 已 `wrangler deploy` 上传（名字 `neutronstar-web`，配置 `web/wrangler.deploy.json`，含 custom domain neutronstar.fun）；Pages 域名解绑/重绑流程已验证。
+- **卡点**：Worker 域接管需删 DNS 里 Pages 留下的 CNAME，**token 缺 Zone DNS Edit 权限**。
+- **恢复步骤（拿到 DNS Edit 权限后）**：删 `neutronstar.fun` 的 CNAME → `cd web && CLOUDFLARE_API_TOKEN=... npx wrangler@4 deploy -c wrangler.deploy.json` → CF 自动接管域名 → 验证 SSR。www 保持 zone 的 301 Redirect Rule 到根域，不用动。
+- 临时诊断路由 `web/src/pages/api-debug.astro` 待删除。
+
+**P2 验收状态**：本地全链路通过（真实文章/相册/说说/站名/侧栏/派生图截图验证）；线上等域名切换后复验。
+
+---
+
 ## 0.5 P1 完成记录（2026-09-12）
 
 **web 子仓 commit**：`c9cc7dc`（上会话遗留改动收尾）+ `e2fa995`（P1 外壳移植）+ `4a41b40`（/blog/* 旧链重定向）+ `07ecf0a`（站点中文化），**已 push origin/main，正式站已切换**（见下）。
