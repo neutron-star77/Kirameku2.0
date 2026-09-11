@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
 import { useEffects } from "@/components/providers/EffectProvider";
 
 function getSeason(): { name: string; label: string } {
@@ -29,13 +28,12 @@ interface Particle {
 }
 
 export default function SeasonalEffect() {
-  const pathname = usePathname();
   const { seasonalEffect } = useEffects();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particles = useRef<Particle[]>([]);
   const animFrame = useRef<number>(0);
   const season = useRef(getSeason());
-  const disabled = pathname?.startsWith("/garden/") || !seasonalEffect;
+  const disabled = !seasonalEffect;
 
   useEffect(() => {
     if (disabled) return;

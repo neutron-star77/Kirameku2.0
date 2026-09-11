@@ -101,8 +101,6 @@ export default function RadialMenu() {
     }
   }, [open, activeIndex]);
 
-  if (pathname.startsWith("/garden")) return null;
-
   const cx = center.x;
   const cy = center.y;
 

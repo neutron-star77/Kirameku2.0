@@ -160,7 +160,6 @@ input, textarea, [contenteditable], .prose, code, pre {
   animation: gradient-flow 20s ease infinite;
 }
 
-/* Live2D 看板娘层级 */
 #waifu {
   z-index: 40 !important;
 }

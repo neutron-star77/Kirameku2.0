@@ -40,7 +40,6 @@ const navLinks = [
   { href: "/timeline", label: "归档", icon: Clock },
   { href: "/music", label: "音乐", icon: Music },
   { href: "/about", label: "关于", icon: User },
-  { href: "/practice", label: "练习", icon: Bookmark },
 ];
 
 export default function Navbar() {
@@ -186,9 +185,6 @@ export default function Navbar() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  // 子站页面隐藏主站导航栏
-  if (pathname.startsWith("/garden")) return null;
 
   return (
     <>

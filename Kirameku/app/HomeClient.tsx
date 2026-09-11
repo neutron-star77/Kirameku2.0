@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import SearchBar from "@/components/ui/SearchBar";
 import ProfileCard from "@/components/home/ProfileCard";
 import FadeIn from "@/components/ui/FadeIn";
 
@@ -11,7 +10,6 @@ const LatestPostsCarousel = dynamic(() => import("@/components/home/LatestPostsC
 const LatestChatterCarousel = dynamic(() => import("@/components/home/LatestChatterCarousel"), { ssr: false });
 const PhotoWallPreview = dynamic(() => import("@/components/home/PhotoWallPreview"), { ssr: false });
 const DogDiary = dynamic(() => import("@/components/home/DogDiary"), { ssr: false });
-const SiteDashboard = dynamic(() => import("@/components/widgets/SiteDashboard"), { ssr: false });
 
 export default function HomeClient({
   postCount,
@@ -24,13 +22,6 @@ export default function HomeClient({
 }) {
   return (
     <div className="w-full max-w-6xl mx-auto py-6 md:py-12 px-4 sm:px-10 relative z-10">
-      {/* 搜索栏 */}
-      <FadeIn>
-        <div className="hidden md:block">
-          <SearchBar />
-        </div>
-      </FadeIn>
-
       <main className="flex flex-col gap-4 md:gap-6 w-full">
         {/* 第一行：个人信息 + 播放器 */}
         <FadeIn delay={0.1}>
@@ -75,12 +66,6 @@ export default function HomeClient({
           </div>
         </FadeIn>
 
-        {/* 底部数据面板 */}
-        <FadeIn delay={0.25}>
-          <div className="w-full">
-            <SiteDashboard />
-          </div>
-        </FadeIn>
       </main>
     </div>
   );

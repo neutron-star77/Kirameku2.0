@@ -54,7 +54,7 @@ export const projects: Project[] = [
     longDescription:
       "基于 Vue 构建的资源分享网站，提供丰富的前端交互体验和优质的资源分享。",
     coverImage: "/images/projects/hiromu-top.webp",
-    techStack: ["Vue", "APlayer", "Live2D", "CSS3"],
+    techStack: ["Vue", "APlayer", "CSS3"],
     links: {
       live: "https://hiromu.top/",
     },

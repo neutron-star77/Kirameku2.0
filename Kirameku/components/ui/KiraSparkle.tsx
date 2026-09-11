@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
 import { useEffects } from "@/components/providers/EffectProvider";
 
 interface Sparkle {
@@ -19,12 +18,11 @@ interface Sparkle {
 }
 
 export default function KiraSparkle() {
-  const pathname = usePathname();
   const { sparkleEffect } = useEffects();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sparkles = useRef<Sparkle[]>([]);
   const animFrame = useRef<number>(0);
-  const disabled = pathname?.startsWith("/garden/") || !sparkleEffect;
+  const disabled = !sparkleEffect;
 
   useEffect(() => {
     if (disabled) return;
