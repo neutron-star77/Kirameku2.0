@@ -30,12 +30,13 @@ python --version # 3.11+
 
 ## 0.5 P1 完成记录（2026-09-12）
 
-**web 子仓 commit**：`c9cc7dc`（上会话遗留改动收尾）+ `e2fa995`（P1 外壳移植）+ `4a41b40`（/blog/* 旧链重定向），**已 push origin/main，正式站已切换**（见下）。
+**web 子仓 commit**：`c9cc7dc`（上会话遗留改动收尾）+ `e2fa995`（P1 外壳移植）+ `4a41b40`（/blog/* 旧链重定向）+ `07ecf0a`（站点中文化），**已 push origin/main，正式站已切换**（见下）。
 
 **正式站切换记录（2026-09-12，用户拍板"旧的不要了"提前触发 P7 切换）**：
 - Pages 项目 `neutronstar-web` 的 production_branch 本来就是 main、域名直挂 neutronstar.fun/www，push main 即上线，无需改 Pages 配置。
 - 上线前补了 `public/_redirects`（`/blog/* → /posts/:splat 301`；HANDOFF 旧版写"已有该文件"是错误信息，实际不存在）。
 - 线上验证全过：根域 200（title=Shirone 新站）、www 301 → 根域、pages.dev 200、/archive//moments/ 200、首页 banner/swup 元素在位、BannerStage 打字动画正常运行。
+- 站点中文化（`07ecf0a`）：`siteConfig.lang: "en" → "zh_CN"`，UI 走 i18n 词典（`src/i18n/languages/zh_CN.ts`）全量翻译，`<html lang="zh-CN">`、日期/字数格式同步本地化；正式站已验证中文。剩余英文/日文属内容与元数据：大标题 Shirone + 日文副标题（siteConfig.title/subtitle，P2 接 site_config 后台改）、demo 文章与分类名（P2 换血）。
 - **待补**：Pages 生产/预览环境变量 `PUBLIC_API_BASE=https://bff.neutronstar.fun` 未能通过 API 配置（token 无 Pages 项目改写权限，PATCH 返回 8000000），需用户在 Dashboard → Pages → neutronstar-web → Settings → Environment variables 手动添加；P1 站无 API 调用不阻塞，**P2 接 BFF 前必须配好**。
 - 注意：**正式站文章目前是 Shirone demo 内容（22 篇）**，P2 数据换血完成后才会换成真实文章；旧文章链接除 /blog/* 外不再保证可达（用户已确认弃用旧内容）。
 
