@@ -41,11 +41,11 @@ const defaultNavigation = JSON.stringify(
 );
 const defaultSidebarWidgets = JSON.stringify(
   {
-    author: true,
-    explore: true,
+    profile: true,
     announcement: true,
     categories: true,
     tags: true,
+    stats: true,
     calendar: true
   },
   null,
@@ -184,12 +184,14 @@ function formatValue(val: unknown): string {
 }
 
 const sidebarLabels: Record<string, string> = {
-  author: "作者",
-  explore: "导航",
+  profile: "作者卡片",
   announcement: "公告",
   categories: "分类",
   tags: "标签",
-  calendar: "日历"
+  stats: "站点统计",
+  calendar: "日历",
+  music: "音乐播放器",
+  toc: "文章目录"
 };
 
 function sidebarState(row: SiteConfigItem): Record<string, boolean> {
@@ -215,6 +217,68 @@ async function toggleSidebar(row: SiteConfigItem, key: string, value: boolean) {
   }
 }
 
+// ---------- 站点图片（site_images） ----------
+const imagesDialogVisible = ref(false);
+const imagesForm = ref({
+  banner_desktop: "",
+  banner_mobile: "",
+  avatar: "",
+  logo: ""
+});
+
+function imagesState(row: SiteConfigItem) {
+  try {
+    const value = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+    return {
+      banner_desktop: (value.bannerDesktop ?? []).join("\n"),
+      banner_mobile: (value.bannerMobile ?? []).join("\n"),
+      avatar: value.avatar ?? "",
+      logo: value.logo ?? ""
+    };
+  } catch {
+    return { banner_desktop: "", banner_mobile: "", avatar: "", logo: "" };
+  }
+}
+
+function openImagesEditor(row: SiteConfigItem) {
+  imagesForm.value = imagesState(row);
+  imagesDialogVisible.value = true;
+}
+
+async function initializeSiteImages() {
+  try {
+    await updateSiteConfig("site_images", {
+      value: JSON.stringify({ bannerDesktop: [], bannerMobile: [], avatar: "", logo: "" }),
+      description: "固定窗口图片 URL：横幅(桌面/移动)、头像、Logo"
+    });
+    msg("图片配置已初始化，可继续编辑 site_images", { type: "success" });
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "初始化失败", { type: "error" });
+  }
+}
+
+async function handleImagesSubmit() {
+  const toList = (text: string) =>
+    text.split("\n").map((s) => s.trim()).filter(Boolean);
+  try {
+    await updateSiteConfig("site_images", {
+      value: JSON.stringify({
+        bannerDesktop: toList(imagesForm.value.banner_desktop),
+        bannerMobile: toList(imagesForm.value.banner_mobile),
+        avatar: imagesForm.value.avatar.trim(),
+        logo: imagesForm.value.logo.trim()
+      }),
+      description: "固定窗口图片 URL：横幅(桌面/移动)、头像、Logo"
+    });
+    msg("图片配置已保存，前台秒级生效", { type: "success" });
+    imagesDialogVisible.value = false;
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "保存失败", { type: "error" });
+  }
+}
+
 onMounted(() => onSearch());
 </script>
 
@@ -227,6 +291,7 @@ onMounted(() => onSearch());
           <div class="flex gap-2">
             <el-button @click="initializeNavigation">初始化导航配置</el-button>
             <el-button @click="initializeSidebarWidgets">初始化侧边栏配置</el-button>
+            <el-button @click="initializeSiteImages">初始化图片配置</el-button>
             <el-button type="primary" @click="openAdd">新增配置</el-button>
           </div>
         </div>
@@ -241,7 +306,16 @@ onMounted(() => onSearch());
         table-layout="auto"
       >
         <template #value="{ row }">
-          <div v-if="row.key === 'sidebar_widgets'" class="flex flex-wrap gap-3 text-left">
+          <div v-if="row.key === 'site_images'" class="text-left">
+            <div class="text-xs text-gray-500 mb-1">
+              横幅桌面 {{ imagesState(row).banner_desktop.split("\n").filter(Boolean).length }} 张 ·
+              横幅移动 {{ imagesState(row).banner_mobile.split("\n").filter(Boolean).length }} 张
+            </div>
+            <el-button link type="primary" size="small" @click="openImagesEditor(row)">
+              编辑图片链接
+            </el-button>
+          </div>
+          <div v-else-if="row.key === 'sidebar_widgets'" class="flex flex-wrap gap-3 text-left">
             <label v-for="(label, key) in sidebarLabels" :key="key" class="inline-flex items-center gap-1.5 text-xs">
               <el-switch
                 :model-value="sidebarState(row)[key]"
@@ -313,6 +387,43 @@ onMounted(() => onSearch());
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 站点图片编辑对话框 -->
+    <el-dialog
+      v-model="imagesDialogVisible"
+      title="编辑固定窗口图片链接"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="110px">
+        <el-form-item label="横幅图(桌面)">
+          <el-input
+            v-model="imagesForm.banner_desktop"
+            type="textarea"
+            :rows="3"
+            placeholder="每行一个图片 URL，第一张为默认横幅"
+          />
+        </el-form-item>
+        <el-form-item label="横幅图(移动)">
+          <el-input
+            v-model="imagesForm.banner_mobile"
+            type="textarea"
+            :rows="2"
+            placeholder="每行一个图片 URL（移动端竖版）"
+          />
+        </el-form-item>
+        <el-form-item label="头像 URL">
+          <el-input v-model="imagesForm.avatar" placeholder="侧边栏作者卡片头像" />
+        </el-form-item>
+        <el-form-item label="Logo URL">
+          <el-input v-model="imagesForm.logo" placeholder="顶栏 Logo（可选，暂未启用）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="imagesDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleImagesSubmit">保存</el-button>
       </template>
     </el-dialog>
   </div>
