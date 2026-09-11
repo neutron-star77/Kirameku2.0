@@ -47,12 +47,24 @@ python --version # 3.11+
 3. **`wrangler secret put` 走管道 stdin 会把结尾换行一起存进去**：导致本地 `.dev.vars` 与线上不一致、HMAC 永远 401。改用 CF API 确定性写入：`PUT /accounts/{acc}/workers/scripts/{name}/secrets` body `{name,text,type:"secret_text"}`。本次已轮换 REVALIDATE_SECRET（新值在 `worker-bff/.dev.vars`，线上同步）。
 4. **后端镜像没有随 P2 代码重建**：容器内连 `app/services/cache_invalidate.py` 都不存在（`grep -c invalidate_cache app/api/chatters.py` = 0），所以"发布→清缓存"一直没生效（表现为发布后缓存仍 HIT）。处理：SMB 同步源码 → NAS 重新 `docker build`（已产出新镜像 `sha256:2a758f07…`）。
 
-**当前状态**：
+**当前状态：✅ P4 全链路已打通并完成端到端验收（2026-09-12）**
 
-- ✅ BFF 已部署（DO 绑定正常，version `4ce33881`）：`/sse/all` 实测首帧 `retry: 3000` + `: connected channel=all`；`/internal/revalidate` 验签通过，返回 `{"purged":1,"channels":["home","all","moments"],"urls":7,"realtime":"queued"}`，**耗时 0.72s**；发布后 `X-Cache` 实测 MISS、预热后 HIT。
-- ✅ 前端已部署（version `8845fef7`）：产物含 `realtime.*.js`（`/sse/` + `kiremekuRealtimeHub` 均在其中），首页/归档/说说/相册/友链/留言全部 200。
-- ⛔ **待办 1（卡在审批）**：NAS 后端容器尚未用新镜像重建 —— 重建后 `cache_invalidate` 才会真正发出 webhook，实时链路才算通到后端。命令已就绪（只 `stop`/`rm`/`run` 应用容器，**不碰 kirameku-pg 与 kirameku_uploads / kirameku_pgdata 卷**），环境变量需含 `REVALIDATE_SECRET`（值同 `worker-bff/.dev.vars`）、`BFF_ORIGIN=https://bff.neutronstar.fun`、`FRONTEND_ORIGIN=https://neutronstar.fun`。
-- ⏳ **待办 2**：浏览器端最终验收 —— 开两个标签页，后台发一条说说，看 `/moments` 是否 1s 内以原入场动画插入新卡片；再改一次导航配置看菜单是否即时刷新。
+- ✅ BFF 已部署（DO 绑定正常，version `4ce33881`）：`/sse/all` 实测首帧 `retry: 3000` + `: connected channel=all`；`/internal/revalidate` 验签通过，返回 `{"purged":1,"channels":["home","all","moments"],"urls":7,"realtime":"queued"}`，**耗时 0.72s**。
+- ✅ 前端已部署（version `8845fef7`）：线上页面里 MomentsList / AlbumGrid / FriendsGrid / MessagesList 四个 island 的 component chunk 均确认引用 `realtime.*.js`。
+- ✅ **NAS 后端容器已用新镜像重建**（容器 id `8d601727…`，`docker build` 产物 sha `2a758f07…`；只替换应用容器，PG 与数据卷未动；重建脚本用完即删，NAS 上无残留）。容器内已确认 `app/services/cache_invalidate.py` 存在、`chatters.py` 含 11 处 `invalidate_cache`。
+- ✅ **端到端实测（一次写操作同时验证两条链路）**：
+  1. 预热 `/api/chatters?...` → `X-Cache: HIT`；
+  2. `POST /api/chatters/1/like`（真实写库）；
+  3. 再取同一 URL → `X-Cache: MISS` ⇒ **NAS 后端 → BFF 的 HMAC 失效 webhook 已通**；
+  4. 同时挂着的一条 `/sse/all` 连接收到 `event: change` + `data: {"channel":"all","action":"published",…}` ⇒ **BFF → DO → 在线浏览器 的扇出已通**；
+  5. 事后 `unlike` 还原数据。
+
+**实时覆盖范围（重要，别误解）**：真正"在线秒弹新"的是带 island 的页面 —— **说说 /moments、相册 /albums、友链 /friends、留言 /messages**；而 **首页 `/`、归档 `/archive`、文章详情 `/posts/*` 是 SSR（无 island）**，它们不会在停留时自动变，但因为 BFF 缓存已被精确清掉，**刷新/跳转即为最新**（原来要等 s-maxage 60s）。要做到停着不动也弹新，得给这些页面加一个轻量 island。
+
+**顺带发现的现状（不是本次引入）**：
+
+- `PostList.tsx`、`HomeFeed.tsx`、`NavigationIsland.tsx`、`MobileNavigation.tsx`、`SidebarVisibility.tsx`、`MusicFloatingCard.tsx`、`PostView.tsx` 这些 island **在当前 Shirone 外壳里已无人引用**（P1 拆壳后遗留；`/archive`、`/` 都已改为 SSR 直出）。本次给前两者加的实时订阅因此是"备用"性质。
+- 顶部导航当前来自**构建期静态配置 `src/config/navBarConfig.ts`**，并未接后台 `site_config.navigation`；所以"改导航即时刷新"这条 P4 预案目前无落点 —— 要接后台导航得先让外壳消费 `/api/site-config/navigation`（属于 P2 数据换血的收尾项，不是 P4 缺陷）。
 
 ---
 
@@ -771,10 +783,12 @@ cd ..\Kirameku-backend
 | ~~正式站内容为 demo 文章~~ | ✅ 已解决（2026-09-12，线上 8 篇真实文章） | 无 |
 | ~~根域是 Pages 旧静态版 / 动态路由 404 / 首页旧缓存~~ | ✅ 已解决（Workers 自定义域接管 + purge，见 0.6） | 无 |
 | ~~未知路径被 catch-all 渲染成首页（软 404）~~ | ✅ 已修（`[...page].astro` 非数字参直接 404） | 无 |
-| P4 实时后端侧（NAS 容器仍是旧镜像） | ⛔ 待重建容器（新镜像已 build 完成，命令已备好） | 后台发布不会触发 webhook |
-| P4 浏览器端"秒弹新"验收 | ⏳ 待人工验收（双标签页发说说） | 体验确认 |
+| ~~P4 实时后端侧（NAS 容器仍是旧镜像）~~ | ✅ 已重建容器并端到端实测通过（见 0.7） | 无 |
 | ~~NAS 后端镜像落后于源码（缺 cache_invalidate）~~ | ✅ 已重新 `docker build` | 无 |
 | ~~`wrangler secret put` 存入带换行的密钥~~ | ✅ 已改用 CF API 重写并轮换 | 无 |
+| 导航/侧栏仍是构建期静态配置（未接 `site_config`） | P2 收尾项：让外壳消费 `/api/site-config/*` | 后台改导航不生效 |
+| 7 个历史 island 已无人引用（PostList/HomeFeed/NavigationIsland 等） | 可清理或按需复活 | 代码噪音 |
+| 首页/归档/文章详情停留时不自动弹新 | 刷新即时；要停着也弹新需加轻量 island | 体验增强 |
 | `/rss.xml`、`/atom.xml`、`/llms.txt` 404 | P6 移植上游同名端点 | 订阅/SEO |
 | `/api/albums` 的 slug 为空 | 相册详情页未启用（走 island 内联展开），如需独立详情页要回填 slug | 功能完整性 |
 | `astro dev` 依赖优化器崩溃 | P2 修复 | 开发体验（当前用 build+preview 替代） |
