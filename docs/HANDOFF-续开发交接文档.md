@@ -28,6 +28,40 @@ python --version # 3.11+
 
 ---
 
+## 0.8 P5 起步记录（2026-09-12，OAuth 凭据仍缺）
+
+**先纠正一个容易误会的点**：`https://bff.neutronstar.fun/api/auth/github/callback` **不是给人直接打开的页面**，它是 GitHub 授权后回跳的接口，必须带 `?code=…`（由 GitHub 带上）。直接在浏览器打开会得到
+`422 {"detail":[{"type":"missing","loc":["query","code"],…}]}` —— 这是**正常现象**，说明 BFF → 后端的透传是通的。
+真正给用户看的落地页是本工程的 **`https://neutronstar.fun/auth/callback?token=…`**。
+
+**本次已完成（不依赖凭据，已上线）**：
+
+1. 前端 `src/pages/auth/callback.astro`（`prerender=false`）：接收后端 302 带来的 `?token=`，写进 `localStorage`（键 `kirameku_github_token`）后回首页；无 token 时显示"没有拿到授权信息"。实测：无 token → `登录失败` 文案；带 token → 页面含写入脚本。
+2. 前端登录态层 `src/lib/auth.ts`：`getToken/setToken/clearToken/loginUrl/useGithubUser`；`api/client.ts` 新增 `apiPost()` 与 `authHeaders()`，**所有请求自动带 `Authorization: Bearer`**。
+3. 新 island `AuthButton`：未登录显示「用 GitHub 登录」（跳 `${API_BASE_URL}/api/auth/github/login`），已登录显示头像 + `@login` + 退出。已挂在 `/moments`、`/albums` 顶部右侧（实测线上 HTML 含登录文案与 login 链接）。
+4. **说说点赞已落库**：`MomentsList` 的 `toggleLike` 改调 `POST /api/chatters/{id}/like|unlike`（乐观更新 + 失败回滚 + 成功后 SWR `mutate` 重拉真实计数）。
+5. 后端 `app/api/github_auth.py` 的 `FRONTEND_ORIGIN` 默认值由 `https://boke.hiromu.top`（模板作者站点）改为 `https://neutronstar.fun`（NAS 容器早已用环境变量覆盖，此改动为裸跑兜底；**要生效需下次重建镜像**）。
+
+**当前阻塞**：`GET /api/auth/github/login` 返回 **500**（"未配置 GITHUB_CLIENT_ID"），容器 env 里确实没有 `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`。
+
+**拿到凭据后的激活步骤（照做即可，无需再改代码）**：
+
+1. GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App：
+   - Application name：`NeutronStar Blog`（随意）
+   - Homepage URL：`https://neutronstar.fun`
+   - **Authorization callback URL：`https://bff.neutronstar.fun/api/auth/github/callback`**（必须精确一致）
+2. 把 **Client ID** 与 **Client Secret** 交给我（或自行写入 NAS 容器 env）。
+3. NAS 后端容器需带：`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`、`FRONTEND_ORIGIN=https://neutronstar.fun`（后两者已在）。重建容器命令见 0.7 的"绕开审批"写法（脚本 + SMB + `tr -d '\r' | sh`），**只替换应用容器，别碰 PG 与数据卷**。
+4. 验证：`/api/auth/github/login` 应 302 到 `github.com/login/oauth/authorize`；走完整流程后 `/auth/callback` 落地 → `/moments` 右上角显示头像。
+
+**P5 剩余（凭据到位后继续）**：
+
+- 评论区：后端 `/api/comments` 目前**只支持 post 维度**（`GET /api/comments/post/{id}`），要覆盖说说/相册需加多态关联（`target_type + target_id` + 索引）与楼中楼 `parent_id`；前端再做对应的 island。
+- 点赞防刷：现有 `like|unlike` 只是计数增减，**无用户维度唯一约束**；要做"我的点赞态/防重复点赞"需加 `like` 关联表（`user_id + target_type + target_id` 唯一）+ Alembic 迁移。
+- 可选：JWT 从 localStorage 升级为 httpOnly cookie（需改后端回调形态）。
+
+---
+
 ## 0.7 P4 实时（SSE + Durable Object）完成记录（2026-09-12）
 
 **目标**：后台发布 → 在线页面秒弹新，零 rebuild。
@@ -795,7 +829,10 @@ cd ..\Kirameku-backend
 | Yozai 15MB TTF 直接入库 | P6 字体子集化解决 | 仓库体积 |
 | 音乐挂件运行时 stylus 编译与 workerd 冲突 | P6 启用前解决 | Shirone 全特性 |
 | 构建期个别图片 compile 后变大 | P2 图片策略复核 | 性能 |
-| GitHub OAuth App 凭据 | 待用户创建 | P5 阻塞 |
+| GitHub OAuth App 凭据（Client ID/Secret） | ⛔ 待提供；前端登录入口/回调页/点赞落库均已就绪（见 0.8） | P5 阻塞：`/api/auth/github/login` 现为 500 |
+| 评论多态关联（说说/相册） | P5 剩项：`/api/comments` 目前只支持 post | 评论区功能 |
+| 点赞防刷（用户维度唯一约束） | P5 剩项：现为纯计数 | 数据可信度 |
+| 后端 `github_auth.py` 默认值修正 | 已改代码，待下次重建镜像生效 | 无（env 已覆盖） |
 | 旧 CF API Token | 建议用户在 Dashboard 删除 | 安全 |
 | fastimage 两级派生图批量生成 | 待用户确认 | P2 图片策略 |
 | CF Image Resizing 权益 | 未验证 | P2 图片策略（默认走预生成，不阻塞） |

@@ -13,7 +13,9 @@ from app.models.github_user import GitHubUser
 router = APIRouter(prefix="/api/auth/github", tags=["GitHub 登录"])
 
 # 前端地址（登录成功后跳转）
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "https://boke.hiromu.top")
+# 注意：默认值曾误指向模板作者的站点 boke.hiromu.top；NAS 容器已用环境变量覆盖，
+# 这里同步修正默认值，避免裸跑（本地/新环境）时把用户跳到别人的站。
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "https://neutronstar.fun")
 
 
 @router.get("/login")
