@@ -111,31 +111,50 @@ def resolve_target(data: CommentCreate) -> tuple[str, int]:
     return target_type, int(target_id)
 
 
-def get_comments(session: Session, target_type: str, target_id: int) -> list[dict]:
-    """某个目标（文章/说说/相册）下的已通过评论，组装成 根+楼中楼 两层。"""
+def get_comments(
+    session: Session,
+    target_type: str,
+    target_id: int,
+    page: int = 1,
+    size: int = 100,
+) -> list[dict]:
+    """某个目标（文章/说说/相册）下的已通过评论，组装成 根+楼中楼 两层。
+
+    分页只作用于根评论；每条根评论的全部 replies 一并返回。
+    """
     if target_type not in SUPPORTED_TARGETS:
         raise HTTPException(400, f"不支持的评论目标：{target_type}")
 
-    rows = list(
-        session.exec(
-            select(Comment)
-            .where(
-                Comment.target_type == target_type,
-                Comment.target_id == target_id,
-                Comment.status == "approved",
-            )
-            .order_by(Comment.created_at.asc())
-        ).all()
+    q = (
+        select(Comment)
+        .where(
+            Comment.target_type == target_type,
+            Comment.target_id == target_id,
+            Comment.status == "approved",
+            Comment.parent_id.is_(None),
+        )
+        .order_by(Comment.created_at.asc())
     )
-    id_map: dict[int, dict] = {c.id: _comment_to_dict(session, c) for c in rows}
-    roots: list[dict] = []
-    for c in rows:
-        d = id_map[c.id]
-        if c.parent_id and c.parent_id in id_map:
-            id_map[c.parent_id]["replies"].append(d)
-        else:
-            roots.append(d)
-    return roots
+    if size > 0:
+        q = q.offset((page - 1) * size).limit(size)
+    roots = list(session.exec(q).all())
+
+    # 一次性拉取这些根评论下的所有回复，避免 N+1
+    root_ids = [c.id for c in roots]
+    all_replies: list[Comment] = []
+    if root_ids:
+        all_replies = list(
+            session.exec(
+                select(Comment)
+                .where(Comment.parent_id.in_(root_ids))
+                .order_by(Comment.created_at.asc())
+            ).all()
+        )
+    reply_map: dict[int, list[dict]] = {}
+    for r in all_replies:
+        reply_map.setdefault(r.parent_id, []).append(_comment_to_dict(session, r))
+
+    return [{**_comment_to_dict(session, c), "replies": reply_map.get(c.id, [])} for c in roots]
 
 
 def get_comments_by_post(session: Session, post_id: int) -> list[dict]:
@@ -182,6 +201,19 @@ def get_comments_admin(
     return items
 
 
+def _verify_target_exists(session: Session, target_type: str, target_id: int) -> None:
+    """创建评论前校验目标内容存在，防止对不存在的文章/说说/相册挂评论。"""
+    if target_type == "post":
+        if not session.get(Post, target_id):
+            raise HTTPException(404, f"文章不存在（id={target_id}）")
+    elif target_type == "chatter":
+        if not session.get(Chatter, target_id):
+            raise HTTPException(404, f"说说不存在（id={target_id}）")
+    elif target_type == "album":
+        if not session.get(Album, target_id):
+            raise HTTPException(404, f"相册不存在（id={target_id}）")
+
+
 def create_comment(
     session: Session,
     data: CommentCreate,
@@ -192,6 +224,7 @@ def create_comment(
         raise HTTPException(401, "请先登录 GitHub")
 
     target_type, target_id = resolve_target(data)
+    _verify_target_exists(session, target_type, target_id)
     content = (data.content or "").strip()
     if not content:
         raise HTTPException(400, "评论内容不能为空")

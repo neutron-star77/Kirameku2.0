@@ -46,10 +46,12 @@ def _require_admin_token(request: Request, session: Session) -> None:
 def get_comments(
     target_type: str = Query("post", description="post / chatter / album"),
     target_id: int = Query(..., ge=1),
+    page: int = Query(1, ge=1, description="根评论分页（默认返回前 100 条根评论）"),
+    size: int = Query(100, ge=1, le=500),
     session: Session = Depends(get_session),
 ):
     """按多态目标取评论（P5）。例：/api/comments?target_type=chatter&target_id=3"""
-    return comment_service.get_comments(session, target_type, target_id)
+    return comment_service.get_comments(session, target_type, target_id, page, size)
 
 
 @router.get("/post/{post_id}", response_model=list[CommentOut])
