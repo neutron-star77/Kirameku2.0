@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-13**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固全部完成；2026-09-13 第二轮 8 项需求中 6 项已完成并全部上线验收（前端 commit ebff376 / 外仓 commit 03186c3 均已 push）：导航修复、Umami 后台可配、CI 自动字体子集、refresh-token/me-logs+登录日志、cloudflared 开机自启、删 5 死 island。仅剩 2 项需用户输入：音乐挂件需 B 站收藏夹 media_id、Umami 需真实统计凭据，见第 7.5 节。**
+> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固全部完成；2026-09-13 第二轮 8 项需求中 6 项已完成、全部上线且全站零回归（web commit `ebff376` CI 已部署 / 外仓 master 到 `9d22e78`，详见 4.9+4.10）：导航修复、Umami 后台可配、CI 自动字体子集、refresh-token/me-logs+登录日志、cloudflared 开机自启、删 5 死 island；续作阶段还修复了 admin /admin 404（bind mount inode 失效）。真正待办只剩 2 项需用户输入：音乐挂件方案 A 已细化到可直接写码、只差一条 B 站收藏夹链接；Umami 只差真实统计凭据。见 7.5。**
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -122,7 +122,7 @@ cd ..\Kirameku-backend
 |:--|:--|:--|:--|
 | ① | JWT→httpOnly cookie 好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
 | ② | TTFB 缓存好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
-| ③ | 音乐挂件改 B 站收藏夹顺序播放（最小代价） | ⏳ **方案待出** | 需用户提供 B 站收藏夹 media_id；前端直连 B 站 API 大概率 CORS，可能需 BFF 代理；详见 7.5 |
+| ③ | 音乐挂件改 B 站收藏夹顺序播放（最小代价） | 📐 **方案 A 已细化到可直接写码** | 推荐外链卡片（约 40 行、零播放器/零 CORS/绕开 workerd 冲突），精确改法见 7.5②；只差用户一条收藏夹链接做验证 |
 | ④ | 3 项小修：删 5 死 island + 后台两占位接口 + cloudflared 自启 | ✅ 全部完成 | 见 4.9①②③ |
 | ⑤ | 排查"说说和友链导航栏看不到" | ✅ 已修复并**线上验收** | 根因：中等宽度(1024–1279px)居中导航被挤压竖排；修复：断点 lg→xl + nowrap；commit ebff376 已上线，三宽度截图通过 |
 | ⑥ | CI 构建时自动重新子集化字体 | ✅ 已上线验证 | CI 实测拉 8 篇文章→3264 字符→771KB(-94.8%)；commit ebff376 |
@@ -375,6 +375,44 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 
 **关键文件**：`scripts/start-tunnel.sh`（生产用，已同步 NAS）、`scripts/restart-tunnel.sh`（手动重启用，kill 后再拉起，已同步 NAS）。
 
+### 4.10 续作阶段：双仓推送上线 + admin 404 修复 + 全站回归（2026-09-13）
+
+4.9 的代码此前只落盘未上线，本阶段完成提交、部署、线上验收，并在健康检查中额外发现并修复一个 admin 挂载坑。
+
+#### 4.10.1 双仓提交与推送（已完成）
+
+- **web 子仓**（分支 main）：commit `ebff376`「fix(nav) + Umami 后台覆盖 + CI 字体子集 + 删 5 死 island」，10 files changed (+60/-301)，已 push。提交前把字体子集产物目录 `src/assets/fonts/.subset/` 加进 `.gitignore`（charset.txt 是 CI 每次重建的产物，不入库）。**严格按显式路径 `git add`，未用 `git add -A`（铁律）**；删除的 5 个 island 用 `git add -u src/components/islands/` 记录。
+- **外仓**（分支 master）：commit `03186c3`（后端 login_log/auth/site_config + admin Umami 面板 + 6 个 NAS 运维脚本 + 本文档，14 files +673/-18）→ `aa3ac0d`（文档状态回写）→ `9d22e78`（补坑 6.3.18），均已 push。
+- **PowerShell 假报错**：`git push` 的进度信息走 stderr，PowerShell 会包成 `NativeCommandError` 红字，只要看到 `<old>..<new> branch -> branch` 就是推送成功，别误判（已记入 6.5）。
+
+#### 4.10.2 CI 自动部署 + 字体子集实测生效（已完成）
+
+- web push 触发 GitHub Actions run **34713250765**，**success，1m37s**（`cd web; gh run list --limit 1` 查状态）。
+- "Subset CJK font from latest posts" 步骤日志确认：`Got 8 posts → Collected 3264 unique characters → Source 14869 KB → Output 771 KB (-94.8%)`，证明 4.9.5 的 CI 字体子集化不是空跑，确实每次构建按最新文章重新裁剪字体。
+
+#### 4.10.3 线上导航三宽度验收（已完成）
+
+CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式站截 1024 / 1180 / 1440 三宽度并逐张 Read 核对：
+- 1024px、1180px：只显示汉堡按钮 ☰ + 站名 + 右侧图标，**无竖排文字、无拥挤** ✓
+- 1440px：横排完整 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于），"说说""友链"清晰可见 ✓
+- 导航问题（用户反馈"说说和友链看不到"）线上闭环。
+
+#### 4.10.4 【新发现并修复】admin 后台 /admin 全 404（bind mount inode 失效）
+
+**现象**：全站健康检查时 `https://kirameku-api.neutronstar.fun/admin/` 返回 404，但后端 API、health 全正常。
+**排查**：进容器 `ls /app/admin/dist` 是**空的**（total 0），而宿主机挂载源 `/share/.../kirameku/backend/admin/dist` 文件齐全（index.html/static/version.json 都在），`docker inspect` 挂载关系也正确。
+**根因**：后端容器启动时宿主机 dist 还是空的，Docker bind 了当时的目录 inode；之后用 `robocopy /MIR` 同步 dist（/MIR 先清空再重建，**目录 inode 改变**），容器仍绑定旧 inode 所以看不到新文件；叠加 `main.py` 只在**启动时**判断一次 `admin_dist.exists()` 才 `app.mount("/admin", StaticFiles(..., html=True))`。
+**修复**：`docker restart kirameku-backend`（重新 bind + 重走启动挂载判断，几秒中断，不碰 PG）。重启后容器内 dist 文件齐全、healthy，`/admin/` 200（text/html），入口 JS `index-*.js`（2.67MB）、CSS、icon、version.json 全部 200，Edge 截图确认 pure-admin 登录页插画正常渲染。
+**沉淀**：踩坑 6.3.18、修正 5.6 后台生效机制、8.3 第 5 步补"同步 dist 后必须 restart 收尾"。**以后 admin 重新 build+robocopy 同步后，固定要 restart 后端容器。**
+
+#### 4.10.5 全站回归（结论：零回归）
+
+- **前端 10 个路由全部 200**：/ /posts /archive /moments /albums /friends /messages /novel /about /anime。
+- **BFF/后端数据 API**：posts=8 篇、chatters=1、albums=6，BFF 与后端条数一致；navigation 9 项、site-config 含 music_widget/umami 等键正常。
+- **两个"看似 404"实为测试误判，不是 bug**：`/api/anime`、`/api/novels` 在 BFF 404，是因为追番页 `anime.astro` 用**静态数据源** `src/data/anime.ts`（构建时打包，本就无后端 API），`novel.astro` 目前是"P2 迁移占位"静态页，都不取数。
+- **友链为空不是 bug**：`/api/friend-links` 返回 `[]`，进库 `select count(*) from friend_link` = **0 行**，是用户尚未在后台添加友链数据（页面、接口、链路都正常，添加数据即显示）。
+- 本轮所有改动（导航/Umami/删 island/CI/后端 auth/login_log/cloudflared）对既有 P0–P6 功能**无回归**。
+
 ---
 
 ## 5. 关键实现细节（改代码前必看）
@@ -561,7 +599,7 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 
 ### 7.5 第二轮需求剩余项与下一步行动（2026-09-13 交接点）
 
-> **当前状态**：本轮 8 项需求中 6 项已完成并**全部上线验收**。前端 web 仓已推送（commit `ebff376`，CI run 34713250765 success，1m37s），外仓已推送（commit `03186c3`）。临时调试文件已全部清理（本地+NAS）。**仅剩 2 项需要用户输入才能推进**（音乐挂件需 B 站收藏夹 media_id、Umami 需真实统计凭据）。
+> **当前状态（2026-09-13 续作后）**：本轮 8 项需求中 6 项已完成并**全部上线、线上验收、全站零回归**（详见 4.9 + 4.10）。前端 web 仓 `ebff376` 已 push 且 CI run 34713250765 success；外仓 master 已 push 到 `9d22e78`（03186c3→aa3ac0d→9d22e78）。健康检查中额外发现并修复了 admin /admin 404（bind mount inode 失效，restart 解决，见 4.10.4/坑 6.3.18）。临时调试文件本地与 NAS 已全部清空。**真正待办只剩需要用户输入的 2 项**：②音乐挂件（方案 A 已细化到可直接写码，只差用户一条 B 站收藏夹链接，见下）+ ⑧Umami 端到端（只差用户填真实 websiteId/scriptUrl/shareUrl，见 4.9.4）。③JWT cookie、④TTFB 用户暂缓；⑦文章加密用户明确不做。
 
 #### ① 前端 web 仓：commit → push → CI 部署 → 线上验收 —— ✅ 已完成（2026-09-13）
 
@@ -579,24 +617,38 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 - 1440px：横排 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于）清晰横排 ✓
 - 说说、友链在宽屏正常显示，问题解决。
 
-#### ② 音乐挂件改 B 站收藏夹顺序播放（待出方案，需用户输入）
+#### ② 音乐挂件改"点击进 B 站网页版收藏夹顺序播放"（方案已细化到可直接写码，只差用户给收藏夹链接）
 
-**用户需求**：音乐挂件点击后链接到网页版 B 站收藏夹，进行顺序播放。要求最小代码代价。
+**用户需求原话**：音乐挂件点击后链接到"网页版 B 站收藏夹"进行**顺序播放**，要求**最小代码代价**。
 
-**现状**：
-- 前端 `musicConfig.enable=false`（运行时 stylus 编译与 workerd 冲突，原 Shirone 音乐挂件无法直接启用）。
-- `SideBar.astro` 第 66 行动态 `import "virtual:shirone-music-sidebar"`，`astro.config.mjs` 第 33 行 `musicWidgetEnabled` 判断。
-- 后端 `DEFAULT_PUBLIC_CONFIG.music_widget = {enabled:false, title:"音乐", subtitle:"悬浮播放器", url:""}` 是现成后台配置位。
+**为什么现在侧栏没有音乐挂件（已摸清完整链路，下一个 AI 不用重新调研）**：
+1. `src/config/sidebarConfig.ts:31` 里 music widget 是 `{ type:"music", enable:true, slot:"top" }`（编排层是开的）。
+2. 但 `src/components/organisms/SideBar.astro:58-67`：`const musicOptions = resolveMusicOptions(musicConfig)`，只有 `musicOptions && hasEnabledMusicWidget` 才去 `await import("virtual:shirone-music-sidebar")` 拿重型播放器组件，否则 `MusicSidebar = null`。
+3. `src/config/musicConfig.ts:50` 是 `enable:false`（原 Shirone 播放器的 stylus 在 workerd 运行时编译冲突，故关闭），`resolveMusicOptions` 在 `!config.enable` 时直接返回 null（musicConfig.ts:124）。
+4. 于是 SideBar.astro:92 的过滤条件 `widget.type!=="music" || MusicSidebar!==null` 把 music widget 滤掉 → 不渲染。
+5. 后台配置位已现成：后端 `app/services/site_config_service.py` 的 `DEFAULT_PUBLIC_CONFIG.music_widget = {enabled:false, title:"音乐", subtitle:"悬浮播放器", url:""}`，会经 `/api/site-config` 下发；但**前端 `src/utils/site-overrides.ts` 目前只解析了 title/description/images/sidebar/umami，还没解析 music_widget**（SiteOverrides 接口里没有这个字段，需新增）。
 
-**待确认（需问用户）**：
-1. B 站收藏夹的 `media_id`（收藏夹 ID，在 B 站收藏夹 URL 里，如 `https://space.bilibili.com/xxx/favlist?fid=MEDIA_ID`）。
-2. 交互形态：(a) 点击挂件直接整页跳转到 B 站收藏夹播放页（最简单，零播放器代码）；(b) 站内浮层 iframe 嵌入 B 站播放器顺序连播（B 站外链播放器 `player.bilibili.com/player.html?bvid=XXX&autoplay=1` 只支持单视频，顺序播放需前端维护播放列表+监听 ended 切下一首，代码量中等）。
+**关键认知（决定方案选型）**：用户要的是"跳到 B 站网页版收藏夹，由 B 站自己顺序连播"，**不是在自己站内做播放器**。B 站收藏夹页本身就支持"播放全部 → 按列表顺序自动连播下一个"。所以最小方案根本不需要碰原 Shirone 播放器、不需要音频 API、不存在 CORS、不触发 stylus/workerd 冲突——只做一个"外链卡片"。
 
-**最小代价推荐方案（待用户确认后实施）**：
-- 方案 A（最小）：侧栏音乐挂件改成一个链接卡片，点击 `window.open("https://www.bilibili.com/list/mlMEDIA_ID?bvid=第一个视频BV")` 跳到 B 站网页版收藏夹自动播放。代码改动：SideBar 加一个静态卡片组件，不启用原 musicConfig（绕过 stylus/workerd 冲突），后端 music_widget.url 存收藏夹链接。约 30 行代码。
-- 方案 B（站内播放）：后端加接口代理 B 站收藏夹 API（`/x/v3/fav/resource/list?media_id=XXX&ps=20`，前端直连有 CORS），前端侧栏浮层用 `<iframe src="player.bilibili.com/player.html?bvid=...&autoplay=1">` + `onended` 事件切下一首。约 200 行代码+1 个后端代理接口。
+**✅ 方案 A（强烈推荐，真正最小，约 40 行，零运行时 JS/零 island/零虚拟模块）——外链卡片**：
+- **(1) 新建纯 Astro 组件** `src/components/molecules/MusicLinkCard.astro`：一个语义化 `<a href={url} target="_blank" rel="noopener noreferrer" class="card-base ...">`，里面显示一个音符图标 + `title` + `subtitle`（如"点击前往 B 站收藏夹顺序播放 →"）。纯静态、SSR 直出，不 import 任何 svelte/react/虚拟模块，从根上绕开 workerd 冲突。
+- **(2) `src/utils/site-overrides.ts` 增加 musicWidget 解析**：`SiteOverrides` 接口加 `musicWidget: { enabled:boolean; title:string; subtitle:string; url:string } | null`；`EMPTY` 加 `musicWidget:null`；在 getSiteOverrides 里照 umami 的写法解析 `cfg.music_widget`（后端下发的是 JSON 字符串，`typeof raw==="string"?JSON.parse(raw):raw`，校验 enabled===true 且 url 非 http 链接才保留，防 `javascript:` 注入）；导出一个 `getMusicWidgetOverride()` 便捷函数。
+- **(3) `src/components/organisms/SideBar.astro` 接 fallback**：顶部 `const musicWidget = (await getSiteOverrides()).musicWidget;`；把第 64-67 行改成"重型播放器优先，拿不到再退到外链卡片"——
+  - `MusicSidebar` 仍按原逻辑取虚拟模块（保持 null）；
+  - 新增 `const MusicFallback = (!MusicSidebar && musicWidget?.enabled && musicWidget.url) ? MusicLinkCard : null;`（import MusicLinkCard）；
+  - `componentMap.music` 改成 `MusicSidebar ?? MusicFallback`；
+  - 第 92 行过滤条件同步改成 `widget.type!=="music" || componentMap.music != null`。
+  - 给 MusicLinkCard 透传 `widget` 的同时把 musicWidget 的 title/subtitle/url 通过 props 或在 SideBar 里直接包一层传下去（最简单：MusicLinkCard 直接 `Astro.props` 收 title/subtitle/url，SideBar 渲染 music 类型时传这三个值）。
+- **(4) 后台填写**：admin「站点配置」页给 `music_widget` 这一行填 JSON：`{"enabled":true,"title":"我的歌单","subtitle":"B站收藏夹 · 点击顺序播放","url":"<收藏夹链接>"}`。若后台没有 music_widget 专用编辑 UI，就先用现有通用 KV 编辑行（和其他 site_config 一样）；想更好用可仿 4.9.4 的 Umami 专用面板做一个（非必须）。
+- **B 站收藏夹链接怎么拿（告诉用户）**：打开自己的 B 站收藏夹，浏览器地址栏形如 `https://space.bilibili.com/<你的mid>/favlist?fid=<收藏夹media_id>&ftype=create`，**整条复制填进后台 url 即可**；这个页面点"播放全部"就会顺序连播。想要落地即自动播放列表，可用 `https://www.bilibili.com/list/ml<media_id>`（收藏夹播放列表视图，自带顺序/随机切换，默认顺序）。
+- **验收**：本地 `pnpm build && pnpm preview`（dev 不可用，见 6.1）→ 侧栏出现音乐卡片 → 点击新标签打开收藏夹；后台 `enabled:false` 或清空 url 时卡片消失（零残留 DOM，符合"禁用零负担"原则）；`pnpm build` 不报 stylus/workerd 错。push 走 CI 后线上复核。
 
-**下一个 AI 应先向用户确认 media_id 和交互形态，再实施。**
+**方案 B（较重，约 200 行 + 1 个后端代理，仅当用户坚持"不离开本站播放"才做）——站内浮层连播**：
+- 后端新增代理接口转 B 站收藏夹列表 API `api.bilibili.com/x/v3/fav/resource/list?media_id=<id>&ps=20&pn=N`（**浏览器直连必 CORS**，必须由后端代拉并可加浏览器 UA），返回 [{bvid,title,cover,duration}...]。
+- 前端侧栏/浮层用 `<iframe src="https://player.bilibili.com/player.html?bvid=<当前>&autoplay=1&high_quality=1">` 播当前视频，监听 iframe/播放器无法直接拿 ended（跨域），需用 B 站 `&t=` 轮询或 postMessage，到点后把 bvid 指针 +1 换 src 实现顺序连播。
+- 代价：要维护播放列表状态、跨域 ended 检测不可靠（B 站 iframe 不抛 ended 事件，只能靠 duration 计时，用户拖动会错位）、后端要承担对 B 站的请求。**除非用户明确要站内沉浸播放，否则不建议。**
+
+**下一个 AI 动作**：默认按**方案 A** 直接实现（它就是用户要的"最小代价"），实现前只需向用户**要一条收藏夹链接**用于本地/线上点按验证；若用户改主意要站内不跳转播放，再走方案 B。两条方案都不需要用户单独提供 media_id 之外的密钥。
 
 #### ③ JWT→httpOnly cookie（已解释好处，用户暂不实施）
 
@@ -621,19 +673,29 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 
 `ProtectedPost/PasswordGate/post-decryption` 组件已存在但未接入，因 API PostEntry 无 encrypted 字段。用户明确"暂时不用管"。后续要做需：后端 Post 模型加 encrypted/password_hash 字段+迁移，文章详情接口按密码校验返回正文，前端 PasswordGate 组件接入。
 
-#### ⑥ 外仓 commit（后端+admin+脚本+文档）—— ✅ 已完成（commit `03186c3`，已 push master）
+#### ⑥ 外仓 commit（后端+admin+脚本+文档）—— ✅ 已完成并 push（master 到 `9d22e78`）
 
-外仓已提交并推送（14 files changed, +673/-18），含：
+外仓已分三次提交并全部推送：`03186c3`（后端 login_log/auth/site_config + admin Umami 面板 + 6 个 NAS 运维脚本 + 本文档，14 files +673/-18）→ `aa3ac0d`（文档状态回写）→ `9d22e78`（补坑 6.3.18）。
 - `Kirameku-backend/app/models/login_log.py`（新）、`app/models/__init__.py`、`app/api/auth.py`、`app/services/site_config_service.py`、`migrations/versions/0003_login_log.py`（新）
 - `Kirameku-backend/admin/src/api/user.ts`、`admin/src/views/site-config/index.vue`
 - `scripts/start-tunnel.sh`（新）+ 其余 NAS 运维脚本（rebuild/start/redeploy-backend、restart-tunnel、diag-nas）入库
 - `docs/HANDOFF-续开发交接文档.md`
 
-后端源码此前已同步 NAS 并重建容器（线上已生效），外仓 commit 是版本记录。**注意**：`admin/dist` 不入库（gitignored），线上后台用的是已同步到 NAS bind mount 的 dist。
+后端源码此前已同步 NAS 并重建容器（线上已生效），外仓 commit 是版本记录。**注意**：`admin/dist` 不入库（gitignored），线上后台用的是已同步到 NAS bind mount 的 dist；且同步 dist 后必须 restart 后端容器（坑 6.3.18）。
 
 #### ⑦ 临时文件清理 —— ✅ 已完成
 
 本地 `scripts/` 与 NAS `U:\kirameku\` 的调试临时文件（`_*.sh`、`_*.png`、`_home_debug.html`、`_parse_nav.mjs`、`verify-stamp-loginlog.sh`、`rebuild-backend-migrate.sh`）已全部删除。本地 scripts 目录现存 7 个文件均为有价值脚本：diag-nas.sh、rebuild-backend.sh、redeploy-backend.sh、restart-tunnel.sh、start-backend.sh、start-tunnel.sh、sync-upstream.mjs。
+
+#### ⑧ 下一个 AI 接手顺序（Checklist，按序执行）
+
+1. **先 grounding**：`cd web; git log --oneline -2`（应见 ebff376）、外仓 `git log --oneline -4`（应见 9d22e78），两仓 `git status` 都应干净；读本文 0.1 铁律 + 第 1 节架构 + 4.9/4.10 + 第 6 节坑。
+2. **向用户要两样东西**（唯一阻塞项）：(a) B 站收藏夹链接（做音乐挂件方案 A）；(b) Umami 的 websiteId / scriptUrl / shareUrl（做统计端到端）。可一次问清。
+3. **音乐挂件（拿到链接后）**：严格按 ② 方案 A 的 4 步改（新建 MusicLinkCard.astro → site-overrides 加 musicWidget 解析 → SideBar.astro 接 fallback → 后台填 url），本地 build+preview 验收，再显式路径 add/commit/push web 仓走 CI，线上复核侧栏卡片。
+4. **Umami（拿到凭据后）**：登录后台 `https://kirameku-api.neutronstar.fun/admin/`（admin/admin123）→ 站点配置 → Umami 面板填三项并启用；等 ≤60s BFF 缓存过期，查看源码确认 umami script 注入、点"打开统计面板"能看到数据。**注意：若期间重新 build 过 admin 并 robocopy 同步，必须 restart 后端容器（坑 6.3.18）。**
+5. **每步都验收**：前端改动必跑本地 build+preview（dev 不可用）；后端改动走 SMB 同步→rebuild-backend.sh→健康检查；任何改动后跑 8.5 验证清单 + 关键页面 200 检查。
+6. **不要主动做**：③JWT cookie、④TTFB（用户暂缓）、⑦文章加密（用户明确不做），除非用户重新提起。
+7. **完成后同样回写本文**：更新第 3、4、6、7、10 节对应内容（遵循文末"只减不增、同源唯一"原则）。
 
 ---
 
@@ -776,6 +838,7 @@ GET  /api/auth/github/login → 307 + Location 指向 github.com
 - 容器：`kirameku-backend`（:8100→8000）、`kirameku-pg`（:15432→5432）；卷 `kirameku_uploads`、`kirameku_pgdata`
 - 域名：`neutronstar.fun`（Worker）、`bff.neutronstar.fun`（BFF Worker）、`kirameku-api.neutronstar.fun`（Tunnel→NAS）
 - 上游 pinned：`b79d301e5e6a8ec897e85b042de43187b571dd5b`
+- **当前版本（2026-09-13 续作后）**：web 子仓 main = `ebff376`（CI run 34713250765 success）；外仓 master = `9d22e78`。两仓工作区均干净。查 CI：`cd web; gh run list --limit 1`；查某步日志：`gh run view <id> --log | Select-String "subset"`。
 - 图床：`https://gcore.jsdelivr.net/gh/neutron-star77/fastimage@main/2026/08/`（派生 `thumbs/`、`full/`）
 - 本机工具：Everything CLI `E:\Program Files (x86)\图拉丁工具箱\图吧工具箱202507\tools\其他工具\Everything\es.exe`；双端推送脚本 `F:\AI\git-templates\sync_and_publish.ps1`
 
