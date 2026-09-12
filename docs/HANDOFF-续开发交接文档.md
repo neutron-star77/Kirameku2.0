@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-13**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固全部完成（评论校验/分页/审核/死 island 清理/Shirone 残留清理）；2026-09-13 第二轮 8 项需求中 6 项已完成并验收（导航修复、Umami 后台可配、CI 自动字体子集、refresh-token/me-logs 接口+登录日志、cloudflared 开机自启、删 5 个死 island），剩余 2 项（前端推送上线、音乐挂件 B 站收藏夹方案）见第 7 节。**
+> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固全部完成；2026-09-13 第二轮 8 项需求中 6 项已完成并全部上线验收（前端 commit ebff376 / 外仓 commit 03186c3 均已 push）：导航修复、Umami 后台可配、CI 自动字体子集、refresh-token/me-logs+登录日志、cloudflared 开机自启、删 5 死 island。仅剩 2 项需用户输入：音乐挂件需 B 站收藏夹 media_id、Umami 需真实统计凭据，见第 7.5 节。**
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -124,8 +124,8 @@ cd ..\Kirameku-backend
 | ② | TTFB 缓存好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
 | ③ | 音乐挂件改 B 站收藏夹顺序播放（最小代价） | ⏳ **方案待出** | 需用户提供 B 站收藏夹 media_id；前端直连 B 站 API 大概率 CORS，可能需 BFF 代理；详见 7.5 |
 | ④ | 3 项小修：删 5 死 island + 后台两占位接口 + cloudflared 自启 | ✅ 全部完成 | 见 4.9①②③ |
-| ⑤ | 排查"说说和友链导航栏看不到" | ✅ 已修复并本地验收 | 根因：中等宽度(1024–1279px)居中导航被挤压竖排；修复：断点 lg→xl + nowrap；**待 push 上线验收** |
-| ⑥ | CI 构建时自动重新子集化字体 | ✅ 已改 deploy.yml | install 后、build 前加 `node scripts/subset-font.mjs`，`continue-on-error` 回退仓库已有子集；**待 push 触发 CI 验证** |
+| ⑤ | 排查"说说和友链导航栏看不到" | ✅ 已修复并**线上验收** | 根因：中等宽度(1024–1279px)居中导航被挤压竖排；修复：断点 lg→xl + nowrap；commit ebff376 已上线，三宽度截图通过 |
+| ⑥ | CI 构建时自动重新子集化字体 | ✅ 已上线验证 | CI 实测拉 8 篇文章→3264 字符→771KB(-94.8%)；commit ebff376 |
 | ⑦ | 文章加密接入 | ⏸️ 用户明确暂不做 | 组件已就绪，API 无 encrypted 字段 |
 | ⑧ | Umami 统计 ID 放后台配置+查看 | ✅ 全部完成 | 后端默认值 + admin 面板 + 前端覆盖层；见 4.9④ |
 
@@ -560,39 +560,23 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 
 ### 7.5 第二轮需求剩余项与下一步行动（2026-09-13 交接点）
 
-> **当前状态**：本轮 8 项需求中 6 项已完成并本地/后端验收，**2 项待办**。所有代码改动已落盘，但**前端 web 仓和外仓均未 commit/push**。下一个 AI 接手时按以下顺序推进。
+> **当前状态**：本轮 8 项需求中 6 项已完成并**全部上线验收**。前端 web 仓已推送（commit `ebff376`，CI run 34713250765 success，1m37s），外仓已推送（commit `03186c3`）。临时调试文件已全部清理（本地+NAS）。**仅剩 2 项需要用户输入才能推进**（音乐挂件需 B 站收藏夹 media_id、Umami 需真实统计凭据）。
 
-#### ① 前端 web 仓：commit → push → CI 部署 → 线上验收（最高优先，阻塞其他验收）
+#### ① 前端 web 仓：commit → push → CI 部署 → 线上验收 —— ✅ 已完成（2026-09-13）
 
-**已改未提交的文件**（`cd web` 后 `git status` 确认）：
+**已提交并上线**（web 仓 commit `ebff376`，10 files changed, +60/-301）：
 - `src/components/organisms/TopAppBar.astro`（导航断点 lg→xl + nowrap，见 4.9.1）
-- 已删除：`src/components/islands/{PostList,HomeFeed,SidebarVisibility,MusicFloatingCard,PostView}.tsx`（git 应显示 deleted）
-- `src/utils/site-overrides.ts`（Umami 覆盖层，见 4.9.4）
-- `src/layouts/Layout.astro`（Umami 后台优先，见 4.9.4）
+- 删除 `src/components/islands/{PostList,HomeFeed,SidebarVisibility,MusicFloatingCard,PostView}.tsx`
+- `src/utils/site-overrides.ts` + `src/layouts/Layout.astro`（Umami 覆盖层，见 4.9.4）
 - `.github/workflows/deploy.yml`（CI 字体子集步骤，见 4.9.5）
+- `.gitignore`（忽略 `src/assets/fonts/.subset/` 字符集产物）
 
-**操作步骤**：
-```powershell
-cd F:\AI\projects\Kirameku2.0\web
-git status                           # 确认改动清单
-git add src/components/organisms/TopAppBar.astro
-git add -u src/components/islands/   # 记录 5 个删除
-git add src/utils/site-overrides.ts src/layouts/Layout.astro
-git add .github/workflows/deploy.yml
-git commit -m "fix: nav breakpoint xl + umami backend override + CI font subset + remove dead islands"
-git push origin main
-```
-**铁律**：不要 `git add -A`（0.1 铁律第 2 条）。
+**CI 验收**：run 34713250765 success；"Subset CJK font" 步骤实际执行——从 BFF 拉 8 篇文章、收集 3264 字符、14869KB→771KB（-94.8%），证明 CI 自动字体子集化生效。
 
-**CI 验收**：push 后 `gh run list --limit 1`（或 GitHub Actions 页面）确认 deploy workflow success，重点看 "Subset CJK font" 步骤是否执行（continue-on-error 即使失败也不阻断，但应看到日志输出 `[subset] Collected N unique characters`）。
-
-**线上导航验收**：CI 部署完成后，用 Edge headless 复截三个宽度确认：
-```powershell
-$edge="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-& $edge --headless=new --disable-gpu --no-sandbox --hide-scrollbars --user-data-dir="$env:TEMP\edge_nav" --virtual-time-budget=8000 --window-size=1024,520 --screenshot="nav_1024.png" "https://neutronstar.fun/?cb=$(Get-Random)"
-# 1024 应显示汉堡菜单（☰），无竖排拥挤；1440 应横排 9 项清晰
-```
-预期：1024/1180px 出汉堡按钮，1280+ 横排 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于），文字横排不竖排。
+**线上导航验收（Edge headless 三宽度截图）**：
+- 1024px / 1180px：出汉堡菜单按钮（☰），无竖排拥挤 ✓
+- 1440px：横排 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于）清晰横排 ✓
+- 说说、友链在宽屏正常显示，问题解决。
 
 #### ② 音乐挂件改 B 站收藏夹顺序播放（待出方案，需用户输入）
 
@@ -636,38 +620,19 @@ $edge="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 `ProtectedPost/PasswordGate/post-decryption` 组件已存在但未接入，因 API PostEntry 无 encrypted 字段。用户明确"暂时不用管"。后续要做需：后端 Post 模型加 encrypted/password_hash 字段+迁移，文章详情接口按密码校验返回正文，前端 PasswordGate 组件接入。
 
-#### ⑥ 外仓 commit（后端+admin+脚本+文档）
+#### ⑥ 外仓 commit（后端+admin+脚本+文档）—— ✅ 已完成（commit `03186c3`，已 push master）
 
-后端和 admin 改动已部署到 NAS，但**外仓（master 分支）未 commit**。需提交：
-```powershell
-cd F:\AI\projects\Kirameku2.0
-git status
-# 预期改动：
-# Kirameku-backend/app/models/login_log.py (新)
-# Kirameku-backend/app/models/__init__.py
-# Kirameku-backend/app/api/auth.py
-# Kirameku-backend/app/services/site_config_service.py
-# Kirameku-backend/migrations/versions/0003_login_log.py (新)
-# Kirameku-backend/admin/src/api/user.ts
-# Kirameku-backend/admin/src/views/site-config/index.vue
-# scripts/start-tunnel.sh (新)
-# scripts/rebuild-backend-migrate.sh (新，可保留作运维脚本)
-# docs/HANDOFF-续开发交接文档.md (本文件)
-git add <显式路径>
-git commit -m "feat: login_log + refresh-token/me-logs + umami backend config + cloudflared autorun + handoff update"
-git push origin master
-```
-**注意**：`admin/dist` 不入库（gitignored），`Kirameku-backend/admin/dist` 是构建产物。后端源码已同步 NAS 并重建容器，外仓 commit 只是版本记录，不影响线上。
+外仓已提交并推送（14 files changed, +673/-18），含：
+- `Kirameku-backend/app/models/login_log.py`（新）、`app/models/__init__.py`、`app/api/auth.py`、`app/services/site_config_service.py`、`migrations/versions/0003_login_log.py`（新）
+- `Kirameku-backend/admin/src/api/user.ts`、`admin/src/views/site-config/index.vue`
+- `scripts/start-tunnel.sh`（新）+ 其余 NAS 运维脚本（rebuild/start/redeploy-backend、restart-tunnel、diag-nas）入库
+- `docs/HANDOFF-续开发交接文档.md`
 
-#### ⑦ 临时文件清理
+后端源码此前已同步 NAS 并重建容器（线上已生效），外仓 commit 是版本记录。**注意**：`admin/dist` 不入库（gitignored），线上后台用的是已同步到 NAS bind mount 的 dist。
 
-本地 `scripts/` 目录下有本轮调试临时文件，可删：
-- `_home_debug.html`、`_parse_nav.mjs`（导航排查）
-- `_nav_desktop.png`、`_nav_mobile.png`、`_nav_1024.png`、`_nav_1180.png`、`_nav_1280.png`、`_fixed_*.png`（截图）
-- `_inspect-autorun.sh`、`_diag-pgrep.sh`、`_test-idempotent.sh`、`_drill-tunnel.sh`、`_setup-autorun.sh`、`_verify-stamp-loginlog.sh`（NAS 临时脚本，NAS 上 U:\kirameku\ 也有对应文件，可一并删）
-- `rebuild-backend-migrate.sh`（一次性组合脚本，可保留或删）
+#### ⑦ 临时文件清理 —— ✅ 已完成
 
-保留：`start-tunnel.sh`（生产用，已同步 NAS）、`restart-tunnel.sh`（生产用）、`rebuild-backend.sh`、`diag-nas.sh`。
+本地 `scripts/` 与 NAS `U:\kirameku\` 的调试临时文件（`_*.sh`、`_*.png`、`_home_debug.html`、`_parse_nav.mjs`、`verify-stamp-loginlog.sh`、`rebuild-backend-migrate.sh`）已全部删除。本地 scripts 目录现存 7 个文件均为有价值脚本：diag-nas.sh、rebuild-backend.sh、redeploy-backend.sh、restart-tunnel.sh、start-backend.sh、start-tunnel.sh、sync-upstream.mjs。
 
 ---
 
