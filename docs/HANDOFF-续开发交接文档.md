@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-13**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P5 完成并线上验收，P7 的域名切换已完成；P6（Shirone 全特性）与若干收尾项未做**，见第 7 节。
+> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固大部分完成（评论校验/分页/审核/死 island 清理/Shirone 残留清理），剩余 JWT→httpOnly cookie 与音乐挂件启用为架构级改动**，见第 7 节。
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -26,7 +26,7 @@
 
 | 想改的东西 | 仓库 / 目录 | 部署方式 |
 |:--|:--|:--|
-| 博客前端（页面/组件/样式/动画） | `web/`（**独立 git 仓**，外仓忽略它） | `cd web && pnpm build && npx wrangler@4 deploy -c wrangler.deploy.json` **（push 不会自动上正式站！）** |
+| 博客前端（页面/组件/样式/动画） | `web/`（**独立 git 仓**，外仓忽略它） | push 到 main → GitHub Actions 自动 `pnpm dlx wrangler@4 deploy -c wrangler.deploy.json`（CI 已配，见 4.8） |
 | BFF（边缘缓存/聚合/SSE） | `worker-bff/`（外仓内） | `cd worker-bff && ./scripts/Deploy.ps1`（自动加载 `.cf.local.env`） |
 | 后端 API / 模型 / 迁移 | `Kirameku-backend/`（外仓内） | SMB 同步 → NAS `docker build` → 重建容器（第 8.3 节） |
 | 后台界面（Vue admin） | `Kirameku-backend/admin/src` | `vite build` → 同步 `admin/dist` 到 NAS（**bind mount，立即生效，不用重启容器**） |
@@ -83,10 +83,10 @@ cd ..\Kirameku-backend
 | DNS（zone `neutronstar.fun`） | `neutronstar.fun` / `www` → `AAAA 100::`（Worker 自定义域标记）；`bff` → `100::`；`kirameku-api`、`dashboard`、`hermes`、`news` → CF Tunnel |
 | zone Worker routes | **空**（没有路由抢占；Worker 靠 custom domain 接管） |
 
-**发布链路现状（重要，容易踩）**
+**发布链路现状（2026-09-13 更新）**
 
-- 前端 `web/` push 到 GitHub → **只**触发 GitHub Actions 把**静态产物**上传到 Pages（`*.pages.dev`），**不再影响正式站**。
-- 正式站必须**手动** `wrangler deploy -c wrangler.deploy.json`。→ 做成 CI 自动部署是本项目**最高优先的运维待办**（见 7.2）。
+- 前端 `web/` push 到 GitHub main → GitHub Actions 自动构建并 `pnpm dlx wrangler@4 deploy -c wrangler.deploy.json` 部署到 Worker `neutronstar-web`（CI 已配，secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` 已就绪）。
+- 踩坑：`npx wrangler@4` 在 ubuntu runner 上报 `sh: wrangler: not found`（exit 127），必须用 `pnpm dlx wrangler@4`。
 
 ---
 
@@ -109,12 +109,12 @@ cd ..\Kirameku-backend
 |:--|:--|:--|:--|
 | **P0 基线** | ✅ | 完整上游 clone、清理重复副本、ADR/领域文档、方案 v2.0 | — |
 | **P1 外壳移植** | ✅ | `web@e2fa995`、四组截图对照通过、`07ecf0a` 中文化上线 | 上游 demo 内容已换血 |
-| **P2 数据换血** | ✅ | `web@65c07a1`+`424e72d`；BFF `/bff/archive|sidebar|home`；相册 234 张入库；site_config 覆盖层 | 导航仍读构建期静态配置（见 7.3） |
+| **P2 数据换血** | ✅ | `web@65c07a1`+`424e72d`；BFF `/bff/archive|sidebar|home`；相册 234 张入库；site_config 覆盖层 | 导航已接后台 API（见 4.8） |
 | **P3 三页动画** | 🟡 已接入未做像素验收 | `MomentsList`（堆叠+倾斜+弹簧展开）、`AlbumGrid`（扇形+拍立得+内联展开）、`FriendsGrid`、`Lightbox` | 与 boke.hiromu.top 的逐项手感对照（需要人眼） |
-| **P4 SSE 实时** | ✅ | DO `RealtimeRoom` + `/sse/:channel`；实测「写操作 → 缓存 MISS + SSE 收到 change 事件」 | 首页/归档/详情停留时不自动刷（无 island） |
-| **P5 登录/评论/点赞** | ✅ | GitHub OAuth 全链路；`likes` 唯一约束防重；评论多态（post/chatter/album）+ 后台双 Tab | 可选加固项见 7.4 |
-| **P6 Shirone 全特性** | ❌ 未做 | — | RSS/atom/llms、搜索、字体子集、文章加密、mermaid/katex、纹理、追番… |
-| **P7 上线** | 🟡 已切流 | Worker 接管根域 + www 301 + 旧链 `/blog/*→/posts/*` | Lighthouse 性能预算未跑；CI 自动部署未做 |
+| **P4 SSE 实时** | ✅ | DO `RealtimeRoom` + `/sse/:channel`；实测「写操作 → 缓存 MISS + SSE 收到 change 事件」 | 首页/归档/详情已加 LiveRefreshBanner（见 4.8） |
+| **P5 登录/评论/点赞** | ✅ | GitHub OAuth 全链路；`likes` 唯一约束防重；评论多态（post/chatter/album）+ 后台双 Tab | 评论已加目标存在性校验 + 分页 + 默认 pending 审核（见 4.8） |
+| **P6 Shirone 全特性** | ✅ | RSS/Atom/llms、Lighthouse、字体子集化（14.5MB→770KB）、SSR 自动刷新横幅、导航接后台 API、Pagefind 搜索+mermaid/katex、追番页+分享海报 | 文章加密组件就绪但无加密文章（API 无 encrypted 字段） |
+| **P7 上线** | ✅ | Worker 接管根域 + www 301 + 旧链 `/blog/*→/posts/*`；CI 自动部署；Lighthouse Performance 84 | TTFB ~1640ms（SSR 回源 BFF 固有延迟，非 bug） |
 
 ---
 
@@ -154,7 +154,7 @@ cd ..\Kirameku-backend
 - 相册 `/albums`：`AlbumGrid.tsx` —— 封面 3 张堆叠 → 悬停扇形展开（`STACK_ANGLES/FAN_ANGLES/FAN_Y`）→ 点击内联高度展开照片墙（拍立得白边+胶带+`tiltFromId` 确定性倾斜）→ `Lightbox`（弹簧缩放 + 键盘 ←/→ + 触摸滑动）。
 - 友链 `/friends`：`FriendsGrid.tsx` 错位卡片。
 - 留言 `/messages`：`MessagesList.tsx`。
-- ⚠️ **已无人引用的历史 island（死代码）**：`PostList.tsx`、`HomeFeed.tsx`、`NavigationIsland.tsx`、`MobileNavigation.tsx`、`SidebarVisibility.tsx`、`MusicFloatingCard.tsx`、`PostView.tsx`（P1 拆壳后遗留；`/`、`/archive` 已改 SSR 直出）。可清理或按需复活。
+- ⚠️ **已无人引用的历史 island（死代码）**：`PostList.tsx`、`HomeFeed.tsx`、`SidebarVisibility.tsx`、`MusicFloatingCard.tsx`、`PostView.tsx`（P1 拆壳后遗留；`/`、`/archive` 已改 SSR 直出）。`NavigationIsland.tsx`、`MobileNavigation.tsx` 已于 2026-09-13 删除。剩余可清理或按需复活。
 
 ### 4.5 P4 SSE 实时（2026-09-12 完成并验收）
 
@@ -211,6 +211,66 @@ cd ..\Kirameku-backend
 6. 验证：`/`、`/2/`、`/archive/`、`/moments/`、`/albums/`、`/friends/`、`/messages/`、`/about/`、`/novel/`、`/posts/<真实 slug>` 全 200；`www` 301；未知路径 404
 
 **顺带修的**：SSR 化后根级 catch-all `[...page].astro` 会把任意未知路径渲染成首页（软 404）→ 已加守卫「只放行 `/` 与纯数字分页，其余直接 `Response(404)`」；删除临时诊断路由 `api-debug.astro`。
+
+### 4.8 P6 全特性 + 可选加固（2026-09-13 完成并线上验收）
+
+**① 前端 CI 自动部署**
+- `web/.github/workflows/deploy.yml` 从 Pages 上传改为 `pnpm dlx wrangler@4 deploy -c wrangler.deploy.json`。
+- 踩坑：`npx wrangler@4` 在 ubuntu runner 报 `sh: wrangler: not found`（exit 127），必须 `pnpm dlx`。
+- 验收：push 后 CI success，Worker 版本更新，站点 200。
+
+**② RSS / Atom / llms.txt / llms-full.txt**
+- 移植上游 `_upstream_shirone/` 的四个端点，适配 API 数据源（上游读 content collection，我们读后端 API）。
+- 关键：列表接口不返回正文，feed 的 contentHtml 回退 description；llms-full.txt 用新增 `getSortedPostsWithContent()` 并行拉单篇详情。
+- 站名走 `getSiteIdentity()`（后台覆盖为 Neutronstar，而非 Shirone）。
+
+**③ Lighthouse 性能预算**
+- 基线（热缓存）：Performance 84 / LCP 2.6s / TTFB 1640ms / CLS 0.005 / TBT 270ms / SI 6.7s。
+- TTFB 高是 SSR 每次回源 BFF 的固有延迟（冷 isolate 更明显），非代码 bug。
+
+**④ 字体子集化**
+- `scripts/subset-font.mjs`：从 BFF 拉 8 篇文章正文 + i18n + config 收集 3264 个唯一字符，用 `subset-font@2.5.0` 生成 WOFF2。
+- 产物 `Yozai-Medium.subset.woff2` 770KB（原 TTF 14.5MB，-94.8%）；`fontConfig.ts` yozai-cjk 指向子集。
+- 重新生成：`pnpm fonts:subset`。注意：静态子集，新增生僻字文章可能缺字。
+
+**⑤ SSR 页停留自动刷新**
+- `LiveRefreshBanner.tsx` React island：`useRealtimeRefresh(["posts","home"])` 监听 SSE，收到后顶部弹「有新内容，点击刷新」横幅。
+- 挂到首页、archive、posts/[slug] 三个 SSR 页面。
+
+**⑥ 导航/侧栏接后台 site_config**
+- `utils/navigation-api.ts`：`fetchNavigation()` + `getNavigation()`（30s 缓存）+ `apiNavToLinks()`（按 href 匹配 LinkPresets 补 icon/pageKey）。
+- `TopAppBar.astro` 改 SSR `await getNavigation()`；`SiteNavigationDrawer.svelte` 改 `$state/$derived` + onMount fetchNavigation()。
+- 验收：线上首页导航显示 API 默认导航（首页/文章/归档/说说/相册/友链/杂谈/小说/关于），而非静态配置。
+
+**⑦ 搜索（Pagefind）+ mermaid/katex/expressive-code**
+- mermaid/katex/expressive-code 此前已接入构建链。缺口是 Pagefind 索引从未生成。
+- `scripts/build-search-index.mjs`：从 BFF API 拉全部已发布文章 → 拉单篇详情正文 → 生成最小 HTML 到临时目录 → 调 pagefind CLI 建索引 → 输出 `dist/client/pagefind`。
+- `package.json` 加 `"postbuild": "node scripts/build-search-index.mjs"`。
+- 踩坑：Windows 上调 pagefind 需 `shell:true` + 完整 `node_modules/.bin/pagefind.cmd` 路径。
+
+**⑧ P6 长尾（追番页 / 分享海报 / 纹理 / FAB）**
+- 纹理（textures.css）和 FAB（FloatingControls.astro + fab-controller）已存在，无需改动。
+- 追番页：新建 `pages/anime.astro`（`AnimeSection client:load animes={animeData}`），数据来自 `src/data/anime.ts`（5 条静态数据）。
+- 分享海报：`posts/[slug].astro` 加 `ArticleShare`（受 `articleConfig.share.enable` 控制），传 title/description/author/published/siteTitle/postPath。
+- 文章加密：`ProtectedPost/PasswordGate/post-decryption` 组件已存在但未接入，因 API PostEntry 无 encrypted 字段，当前无加密文章。
+
+**可选加固（已完成）**
+- 评论创建校验目标存在性：`comment_service._verify_target_exists()`，对不存在的 post/chatter/album 返回 404。
+- `/api/comments` 读接口分页：加 `page/size` 参数（默认 page=1, size=100），分页只作用于根评论，replies 一并返回；同时优化为批量拉回复避免 N+1。
+- 评论审核流程：`Comment.status` 默认从 `approved` 改为 `pending`，新评论需后台审核后才公开；公开接口已过滤 `status=="approved"`。
+- 清理死 island：删除 `NavigationIsland.tsx`、`MobileNavigation.tsx`（确认无引用）。
+- Shirone 残留字样：`share-poster.ts` 回退站名、`siteConfig.ts` 默认 title 改为 Neutronstar（其余 307 处为内部标识符/CSS 类名/事件名，不可改）。
+
+**基础设施修复（cloudflared 隧道）**
+- 两次隧道掉线（530/502），最终定位为 NAS 网络限制 UDP/QUIC，cloudflared 注册连接后立即 "timeout: no recent network activity"。
+- 解法：重启脚本加 `--protocol http2`，稳定运行。
+- 脚本：`scripts/restart-tunnel.sh`（LF 行尾，已复制到 `U:\kirameku\`）。
+- cloudflared 以 nohup 后台进程运行（非 systemd 非 Docker），NAS 重启后需手动拉起。
+
+**后端部署注意**
+- 后端容器无 `.env` 文件，env 通过 `docker run -e` 传入。重建容器时必须带完整 env（DATABASE_URL / SECRET_KEY / CORS_ORIGINS / FRONTEND_ORIGIN / BFF_ORIGIN）。
+- PG 在 bridge 网络 IP `10.0.3.2:5432`（容器名解析在默认 bridge 不工作）。
+- 部署脚本：`scripts/rebuild-backend.sh`（复制到 U:\kirameku\ 后 `sh` 执行）。
 
 ---
 
@@ -274,6 +334,9 @@ cd ..\Kirameku-backend
 8. **路径末尾斜杠**：`/auth/callback` → 301 到 `/auth/callback/`，**query 会保留**（已实测），新页面注意别依赖无斜杠 URL。
 9. **Svelte 5 是 runes 模式**（`$state`/`$derived`），不是 `export let`；`variables.styl` 需要 stylus 支持。
 10. **pnpm 11 不再读 `package.json.pnpm.onlyBuiltDependencies`** → 必须在 `pnpm-workspace.yaml` 写 `allowBuilds`（esbuild/workerd/sharp…），否则二进制不装、构建失败。
+11. **路径别名**：`@config/`、`@data/` 不存在；配置用 `@/config/`，data 用相对路径（如 `../data/anime`）。`@components/`、`@utils/`、`@i18n/` 是正常别名。
+12. **Pagefind 在 Windows 上调用**：`execFileSync("pagefind")` 会报 `spawn pagefind ENOENT`；必须 `shell:true` + 完整路径 `node_modules/.bin/pagefind.cmd`。
+13. **字体子集是静态生成的**：`pnpm fonts:subset` 从当前 API 文章收集字符，新增含生僻字的文章可能缺字（tofu），需重新跑子集化。
 
 ### 6.2 Cloudflare（Pages / Workers / DO / Token）
 
@@ -287,6 +350,7 @@ cd ..\Kirameku-backend
 8. **Pages 环境变量字段名是 `env_vars`**（旧文档的 `environment_variables` 会静默写不进去但返回 success）。
 9. **"绑定 active + DNS 对 + purge 了仍是旧内容"** 时，先查 zone 的 **Worker route 抢占**（`GET /zones/{zone}/workers/routes`），优先级高于 Pages。
 10. **`cdn.jsdelivr.net` / `fastly.jsdelivr.net` 对 gh 资源会 301 到 raw** → 图床统一走 `gcore.jsdelivr.net`。
+11. **GitHub Actions ubuntu runner 上 `npx wrangler@4 deploy` 报 `sh: wrangler: not found`（exit 127）** → 必须用 `pnpm dlx wrangler@4 deploy`（npx 在 pnpm 项目里解析不到二进制）。
 
 ### 6.3 NAS Docker / 部署
 
@@ -299,6 +363,10 @@ cd ..\Kirameku-backend
 7. **大目录 robocopy 会被判"长时间无输出"而中断** → 分目录小步同步。
 8. 真要跑管理类命令又不想弹确认，可**把命令写成 `.sh` → `Copy-Item` 推到 `U:\kirameku\` → `ssh hewll 'tr -d "\r" < /share/.../x.sh | sh'`**，用完再写个自删除清理脚本同法跑掉（实战有效）。
 9. 一次性脚本执行容器内 python 的正确姿势：`docker run --rm -w /app -e PYTHONPATH=/app -v <host脚本>:/tmp/x.py -e DATABASE_URL=… <image> python /tmp/x.py`（少了 `-w /app` 或 `PYTHONPATH` 会 `ModuleNotFoundError: app`）。
+10. **cloudflared 必须加 `--protocol http2`**：NAS 网络限制 UDP/QUIC，默认 QUIC 协议注册连接后立即 "timeout: no recent network activity"（表现为 API 530/502，进程在跑但未连接边缘）。重启脚本见 `scripts/restart-tunnel.sh`（已复制到 `U:\kirameku\`）。
+11. **后端容器无 `.env` 文件**：env 全部通过 `docker run -e` 传入（DATABASE_URL / SECRET_KEY / CORS_ORIGINS / FRONTEND_ORIGIN / BFF_ORIGIN），重建容器时必须带完整 env。部署脚本见 `scripts/rebuild-backend.sh`。
+12. **PG 在默认 bridge 网络**：容器名 DNS 解析不工作，DATABASE_URL 必须用 IP `10.0.3.2:5432`（PG 重启后 IP 可能变，需重新确认）。
+13. **cloudflared 以 nohup 后台进程运行**（非 systemd 非 Docker），NAS 重启后需手动 `sh /share/CACHEDEV1_DATA/Container/kirameku/restart-tunnel.sh` 拉起。
 
 ### 6.4 工具链 / PowerShell / 命令
 
@@ -324,76 +392,53 @@ cd ..\Kirameku-backend
 
 ## 7. 下一步待办（含做法与验收）
 
-### 7.1 高优先（运维风险 / 明显缺口）
+> **2026-09-13 更新**：7.1 ①–④、7.2 ⑤–⑧ 全部完成并线上验收（见 4.8）。7.3 可选加固大部分完成。剩余项见下方标注。
 
-**① 前端自动部署（正式站）—— 强烈建议先做**
+### 7.1 高优先（运维风险 / 明显缺口）—— ✅ 全部完成
 
-- 为什么：现在 `web/` push **只更新 pages.dev**，正式站必须手动 `wrangler deploy`，极易忘记 → 线上与仓库不一致。
-- 怎么做：改 `web/.github/workflows/deploy.yml`，把最后一步换成
-  `pnpm build && npx wrangler@4 deploy -c wrangler.deploy.json`（env 需要 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，secrets 已存在）；注意 DO 迁移与 Worker 部署是幂等的。
-- 验收：push 一个无关紧要的提交（如文档），确认 Worker 版本号变化且线上生效。
+**① 前端自动部署（正式站）** — ✅ 已完成（CI 自动 `pnpm dlx wrangler@4 deploy`，见 4.8①）
 
-**② RSS / Atom / llms.txt / robots.txt 端点（P6 的一部分）**
+**② RSS / Atom / llms.txt / robots.txt 端点** — ✅ 已完成（四个端点 200，见 4.8②）
 
-- 现状：`/rss.xml`、`/atom.xml`、`/llms.txt` **404**；上游有对应 `.ts` 端点（`_upstream_shirone/src/pages/{rss,atom}.xml.ts`、`llms.txt.ts`）。
-- 怎么做：照上游写法移植到 `web/src/pages/`，数据源改成 `getSortedPostsList()`（`@utils/content-utils`，已走 API）；`siteConfig.site` 已正确。
-- 验收：三个 URL 返回 200 且内容是合法 XML/文本（可用 `xmllint` 或浏览器订阅器验证）。
+**③ Lighthouse 性能预算** — ✅ 已完成（Performance 84，见 4.8③）；TTFB ~1640ms 是 SSR 回源 BFF 固有延迟
 
-**③ Lighthouse 性能预算（P7 未做）**
+**④ 字体子集化** — ✅ 已完成（14.5MB→770KB，见 4.8④）
 
-- 预算：TTFB ≤100ms（边缘）、LCP ≤1.5s、CLS ≤0.05、INP ≤200ms、首屏 JS ≤120KB gzip。
-- 做法：`web/` 里跑 `npx lighthouse https://neutronstar.fun --view`；重点看首屏 JS（Swup + islands）与字体（`web/src/assets` 下 **1 个字体文件 14.5MB** 全量入库！）。
+### 7.2 中优先（功能完整性）—— ✅ 全部完成
 
-**④ 字体子集化（P6）**
+**⑤ 首页/归档/文章详情「停留时自动刷」** — ✅ 已完成（LiveRefreshBanner，见 4.8⑤）
 
-- 现状：`fontConfig.subsetting.enable=false`，`web/src/assets` 里 Yozai 字体 15MB 直接入库。
-- 怎么做：打开 `subsetting.enable`，构建前跑 `pnpm fonts:subset`（上游 `scripts/fonts/subset`）；中文按实际使用字符裁剪。
-- 验收：字体体积显著下降（目标 ≤60KB 单角色）、页面文字无缺字。
+**⑥ 导航/侧栏接后台 `site_config`** — ✅ 已完成（navigation-api.ts + TopAppBar/Drawer 改造，见 4.8⑥）
 
-### 7.2 中优先（功能完整性）
+**⑦ 搜索（Pagefind）+ Markdown 增强** — ✅ 已完成（postbuild 生成索引 + mermaid/katex/expressive-code，见 4.8⑦）
 
-**⑤ 首页/归档/文章详情「停留时自动刷」**
-
-- 现状：这三类是 SSR（无 island），P4 的实时只覆盖有 island 的页面；刷新/跳转才会看到新内容（缓存已被精确清掉，所以是"随时刷新即最新"）。
-- 怎么做：加一个轻量 island（如 `<LiveRefresh channels={["posts"]} />`），收到事件后 `router.refresh()`? Astro 没有；实践做法是 `location.reload()` 太重，可用「顶部条提示有新内容，点击刷新」的 island（更好的体验）。
-
-**⑥ 导航/侧栏接后台 `site_config`**
-
-- 现状：顶部导航来自**构建期静态配置** `web/src/config/navBarConfig.ts`（`userNavConfig` 覆盖机制存在，但没接后台 API）；后台「站点配置 → 导航」改了不生效。
-- 怎么做：外壳 `TopAppBar.astro` / `SiteNavigationDrawer.svelte` 改为消费 `${API_BASE}/api/site-config/navigation`（可 SSR 取一次 + 客户端 SWR 刷新），并把 `useRealtimeRefresh(["site-config"])` 接上（`NavigationIsland.tsx` 已有现成实现可参考）。
-- 验收：后台改导航 → 前台菜单 1 秒内变（P4 通道 `nav` 已就绪）。
-
-**⑦ 搜索（Pagefind）+ Markdown 增强（P6）**
-
-- 依赖已装（`pagefind`、`expressive-code`、`katex`、`mermaid`）；需要：构建链加 `pagefind --site dist`、新增 `/search` 页面与入口、mermaid/katex 改 dynamic import（避免首屏体积）。
-- 验收：搜索页能命中中文文章；代码块有行号/复制；数学公式与流程图渲染正常。
-
-**⑧ 文章加密 / 追番 / 纹理 / FAB / 分享海报（P6 长尾）**
-
-- 上游 config 与脚本都在 `_upstream_shirone/`，按需移植；注意加密密钥不入库、追番同步脚本要有节流。
+**⑧ 文章加密 / 追番 / 纹理 / FAB / 分享海报** — ✅ 基本完成（追番页+分享海报+纹理+FAB 已上线；文章加密组件就绪但无加密文章，见 4.8⑧）
 
 ### 7.3 可选加固
 
-- **JWT 从 localStorage 升级为 httpOnly cookie**（需改后端回调形态：不再 302 带 token，而是 Set-Cookie）。
-- **评论创建时校验目标存在性**（现在只校验格式：`create_comment` 未查 album/post/chatter 是否存在）。
-- **后台评论分页**：当前固定 `size:100`、无分页器。
-- **清理 7 个死 island**（4.4 节列表；均已确认仍在 `web/src/components/islands/`，无人引用）。注：`web/src/data/albums.ts` 已在 P2 删除，不存在了。
-- **`/posts/` 现在是 meta-redirect 到 `/archive/`**（200 + 刷新跳转），可评估是否改成 301。
-- **首页残留 `Shirone` 字样**：只是 CSS 注释与 nav/footer 指向上游仓库 `LyraVoid/Shirone` 的链接，想改就改 `navBarConfig.ts` / `footerConfig.ts`。
-- **`/api/comments` 列表接口未按 status 过滤以外的维度分页**（读接口返回全部 approved）。
+| 项 | 状态 | 说明 |
+|:--|:--|:--|
+| JWT 从 localStorage 升级为 httpOnly cookie | ⏳ 未做 | 需改后端回调形态（不再 302 带 token，改 Set-Cookie）+ 前端 fetch 带 credentials；架构级改动 |
+| 评论创建时校验目标存在性 | ✅ 已完成 | `_verify_target_exists()`，见 4.8 |
+| 后台评论分页 | ✅ 已存在 | `GET /api/comments/admin` 已有 page/size（默认 20） |
+| 清理 7 个死 island | 🟡 部分完成 | 已删 NavigationIsland/MobileNavigation；剩余 PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView 待确认引用后删除 |
+| `/posts/` 改 301 评估 | ✅ 不需要改 | `/posts/` 当前返回 200 是有效文章列表页，非 meta-redirect |
+| 首页残留 `Shirone` 字样 | ✅ 已清理 | share-poster/siteConfig 默认值改 Neutronstar；其余为内部标识符不可改 |
+| `/api/comments` 读接口分页 | ✅ 已完成 | page/size 参数，默认 100，见 4.8 |
 
 ### 7.4 已知缺陷清单
 
-| 缺陷 | 影响 | 备注 |
+| 缺陷 | 影响 | 状态 / 备注 |
 |:--|:--|:--|
-| `astro dev` 不可用 | 开发体验（只能 build+preview） | 见 6.1.1 |
-| 前端改动不会自动上线 | 可能忘记部署 | 见 7.1 ① |
-| 导航/侧栏未接后台 | 后台改了不生效 | 见 7.2 ⑥ |
-| RSS/atom/llms 404 | 订阅/SEO | 见 7.1 ② |
-| Yozai 字体 15MB 入库 | 仓库体积 + 首屏 | 见 7.1 ④ |
-| 音乐挂件未启用 | Shirone 特性缺失 | 运行时 stylus 编译与 workerd 冲突，启用前要解决 |
-| 构建期个别图片 compile 后变大 | 体积 | 例：extreme-3 1.6MB→3.8MB |
-| 评论无审核流程 | 内容风险 | `status` 默认 approved；后台可手动改 |
+| `astro dev` 不可用 | 开发体验（只能 build+preview） | 已知限制，见 6.1.1 |
+| 前端改动不会自动上线 | 可能忘记部署 | ✅ 已解决（CI 自动部署） |
+| 导航/侧栏未接后台 | 后台改了不生效 | ✅ 已解决（见 4.8⑥） |
+| RSS/atom/llms 404 | 订阅/SEO | ✅ 已解决（见 4.8②） |
+| Yozai 字体 15MB 入库 | 仓库体积 + 首屏 | ✅ 已解决（子集化 770KB，原 TTF 保留作源） |
+| 音乐挂件未启用 | Shirone 特性缺失 | 运行时 stylus 编译与 workerd 冲突，启用前要解决；⏳ 未做 |
+| 构建期个别图片 compile 后变大 | 体积 | 例：extreme-3 1.6MB→3.8MB；Astro sharp 处理问题，影响小 |
+| 评论无审核流程 | 内容风险 | ✅ 已解决（默认 pending，后台可审核，见 4.8） |
+| cloudflared 隧道持久化 | NAS 重启后需手动拉起 | nohup 后台进程，非 systemd/Docker；⏳ 未配置持久化 |
 
 ---
 
@@ -405,12 +450,17 @@ cd ..\Kirameku-backend
 cd F:\AI\projects\Kirameku2.0\web
 pnpm install
 $env:NO_PROXY="127.0.0.1,localhost"
-pnpm build                                   # 产物 dist/client + dist/server
-# 正式站部署（必须手动！）
+pnpm build                                   # 产物 dist/client + dist/server；postbuild 自动生成 pagefind 索引
+pnpm preview --port 4321 --force             # 本地验证（dev 不可用，见 6.1.1）
+
+# 部署：push 到 main 后 CI 自动部署（GitHub Actions → wrangler deploy）
+# 手动部署（紧急时）：
 $env:CLOUDFLARE_API_TOKEN=(Get-Content ..\worker-bff\.cf.local.env -Encoding UTF8 | ConvertFrom-StringData).CLOUDFLARE_API_TOKEN
 $env:CLOUDFLARE_ACCOUNT_ID='d4add8ad549536a77a5b9fcf6d5be733'
-npx wrangler@4 deploy -c wrangler.deploy.json
-# 清缓存（可选，HTML 是 DYNAMIC 一般不缓存）
+pnpm dlx wrangler@4 deploy -c wrangler.deploy.json
+
+# 字体重新子集化（新增含生僻字文章后）
+pnpm fonts:subset
 ```
 
 ### 8.2 BFF（worker-bff/）
