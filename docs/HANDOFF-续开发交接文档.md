@@ -1,8 +1,8 @@
 # Kirameku2.0 交接文档（给下一个 AI / 开发者）
 
-> 更新时间：**2026-09-13**　主工程：`F:\AI\projects\Kirameku2.0`
+> 更新时间：**2026-09-13（第三轮续作后）**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固全部完成；2026-09-13 第二轮 8 项需求中 6 项已完成、全部上线且全站零回归（web commit `ebff376` CI 已部署 / 外仓 master 到 `9d22e78`，详见 4.9+4.10）：导航修复、Umami 后台可配、CI 自动字体子集、refresh-token/me-logs+登录日志、cloudflared 开机自启、删 5 死 island；续作阶段还修复了 admin /admin 404（bind mount inode 失效）。真正待办只剩 2 项需用户输入：音乐挂件方案 A 已细化到可直接写码、只差一条 B 站收藏夹链接；Umami 只差真实统计凭据。见 7.5。**
+> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐挂件方案 A 已实现并上线（代码就绪、后台开关+链接可配，默认关闭待用户填收藏夹链接）；过程中发现并修复了一个线上重大 bug——LiveRefreshBanner SSR 返回 null 导致首页/归档/文章页响应流被随机截断（用户一直看到的"首页没文章列表"即此），已修复上线并三连验证完整渲染。** 真正待办只剩 2 项需用户输入：一条 B 站收藏夹链接（填后台 music_widget 即上线）+ Umami 真实统计凭据（后台直接填）。见 7.5。
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -94,8 +94,8 @@ cd ..\Kirameku-backend
 
 | 仓库 | 路径 | remote | 说明 |
 |:--|:--|:--|:--|
-| 外仓（主） | `F:\AI\projects\Kirameku2.0` | `neutron-star77/Kirameku2.0.git`（分支 **master**） | 后端、BFF、文档、脚本；HEAD `70cc1dc` |
-| 前端子仓 | `…\Kirameku2.0\web` | `neutron-star77/neutronstar-web.git`（分支 **main**） | **独立 git**，被外仓 `.gitignore` 忽略；HEAD `4936b8b` |
+| 外仓（主） | `F:\AI\projects\Kirameku2.0` | `neutron-star77/Kirameku2.0.git`（分支 **master**） | 后端、BFF、文档、脚本 |
+| 前端子仓 | `…\Kirameku2.0\web` | `neutron-star77/neutronstar-web.git`（分支 **main**） | **独立 git**，被外仓 `.gitignore` 忽略；HEAD `2f77b19` |
 | 图床仓 | `F:\AI\projects\fastimage` | `neutron-star77/fastimage.git` | 234 张鬼刀图 + 两级派生图（thumbs/full），jsDelivr/gcore |
 | 上游基线 | `…\Kirameku2.0\_upstream_shirone` | `LyraVoid/Shirone.git`（浅克隆） | **不入库**，pinned `b79d301e…`，由 `scripts/sync-upstream.mjs` 管理 |
 
@@ -122,7 +122,7 @@ cd ..\Kirameku-backend
 |:--|:--|:--|:--|
 | ① | JWT→httpOnly cookie 好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
 | ② | TTFB 缓存好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
-| ③ | 音乐挂件改 B 站收藏夹顺序播放（最小代价） | 📐 **方案 A 已细化到可直接写码** | 推荐外链卡片（约 40 行、零播放器/零 CORS/绕开 workerd 冲突），精确改法见 7.5②；只差用户一条收藏夹链接做验证 |
+| ③ | 音乐挂件改 B 站收藏夹顺序播放（最小代价） | ✅ **代码已上线（默认关闭）** | 方案 A 落地：MusicLinkCard.astro 外链卡片 + music_widget 后台可配；线上验收「启用出卡片/禁用零残留」通过；**只差用户在后台填一条收藏夹链接**，见 4.11.1 |
 | ④ | 3 项小修：删 5 死 island + 后台两占位接口 + cloudflared 自启 | ✅ 全部完成 | 见 4.9①②③ |
 | ⑤ | 排查"说说和友链导航栏看不到" | ✅ 已修复并**线上验收** | 根因：中等宽度(1024–1279px)居中导航被挤压竖排；修复：断点 lg→xl + nowrap；commit ebff376 已上线，三宽度截图通过 |
 | ⑥ | CI 构建时自动重新子集化字体 | ✅ 已上线验证 | CI 实测拉 8 篇文章→3264 字符→771KB(-94.8%)；commit ebff376 |
@@ -413,6 +413,41 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - **友链为空不是 bug**：`/api/friend-links` 返回 `[]`，进库 `select count(*) from friend_link` = **0 行**，是用户尚未在后台添加友链数据（页面、接口、链路都正常，添加数据即显示）。
 - 本轮所有改动（导航/Umami/删 island/CI/后端 auth/login_log/cloudflared）对既有 P0–P6 功能**无回归**。
 
+### 4.11 第三轮续作（2026-09-13）：音乐挂件上线 + 修复 SSR 截断重大 bug
+
+#### 4.11.1 音乐挂件方案 A 落地（web commit `cdb840b`，CI run 34715783783 success）
+
+严格按 7.5② 的细化方案实现，改动 3 文件（+108/-3）：
+
+1. **新建 `web/src/components/molecules/MusicLinkCard.astro`**：纯静态 SSR 外链卡片（WidgetLayout 外壳 + 音符图标 + 标题/副标题 + 外链箭头），零 island/零运行时 JS；内部再校验一次 `getMusicWidgetOverride()`，url 为空不渲染（双保险零残留）。
+2. **`web/src/utils/site-overrides.ts`**：新增 `MusicWidgetOverride` 接口 + `musicWidget` 解析（兼容 JSON 字符串/对象；`enabled||enable` 双键兼容；**url 仅接受 `https?://` 外链防 `javascript:` 注入**）+ `getMusicWidgetOverride()`（enabled 且 url 非空才返回）。
+3. **`web/src/components/organisms/SideBar.astro`**：`MusicFallback = !MusicSidebar && musicWidget?.enabled && musicWidget.url ? MusicLinkCard : null`；`componentMap.music = MusicSidebar ?? MusicFallback`；过滤条件改 `widget.type!=="music" || componentMap.music != null`。原 Shirone 播放器逻辑原样保留（musicConfig.enable 仍为 false，未来若解决 stylus/workerd 冲突可无缝切回）。
+
+**验证方法（沉淀）**：本地 preview 的 SSR 渲染不可靠（见 4.11.2，当时误判为"本地怪象"），改用**构建期预渲染 + mock 配置服务器**做确定性验证——`PUBLIC_API_BASE=http://127.0.0.1:9999 pnpm build` 指向只服务 `/api/site-config` 的 node mock（enabled:true + 占位 B 站链接），从 `dist/client/albums/index.html` 直接断言卡片 HTML（href/target=_blank/rel/文案全对）；真实 BFF 构建断言 `music-link` 出现 0 次（禁用零残留）。
+
+**线上验收**：部署后通过 `PUT /api/site-config/music_widget`（admin JWT，body 是 `{"value":"<JSON字符串>"}`，注意 Git Bash 直接 -d 内嵌转义会报 parsing body 错误，**要写 JSON 文件 `-d @file`**）临时启用占位 `https://www.bilibili.com` → 线上卡片渲染 ✓（Edge headless 截图确认视觉：Profile 卡下方，WidgetLayout 样式与其它 widget 一致）→ 回滚 enabled:false → 卡片零残留 ✓。注意 BFF site-config 缓存是 **per-colo Cache API**，写接口的失效只清当前 colo，其它 colo 最长 60s 才生效。
+
+**当前状态**：代码上线，`music_widget` 已回滚为 `{"enabled":false,"title":"音乐","subtitle":"悬浮播放器","url":""}`。**用户在后台「站点配置」把 music_widget 填成 `{"enabled":true,"title":"音乐","subtitle":"B站收藏夹 · 点击顺序播放","url":"<收藏夹链接>"}` 即上线**（等 ≤60s 缓存）。
+
+#### 4.11.2 【重大】发现并修复 SSR 页面响应流截断（web commit `2f77b19`，CI run 34716510215 success）
+
+**现象**：验收音乐挂件时发现线上首页 HTML 只有 74–95KB（正常 159KB）、无 `</html>` 结尾，截断点随机（banner 后/侧栏中段/calendar 里都有）；首页主内容区（文章列表）经常整个缺失。**这是 P6 上线 LiveRefreshBanner 以来就存在的 bug**——`GET 200` 状态码掩盖了截断，此前 4.10.5 的"全站回归"只查了状态码所以没发现。本地 `astro preview`（wrangler dev）复现同样截断，且 **git stash 回滚到 ebff376 基线同样复现**，排除本轮改动嫌疑。
+
+**根因**（`wrangler dev` 本地跑构建产物抓到完整堆栈）：`LiveRefreshBanner.tsx` 第 31 行 `if (!visible) return null;`——SSR 期 `visible` 恒为 false，React island 服务端渲染返回 null，Astro `renderFrameworkComponent` 抛 `Uncaught Error: Unable to render LiveRefreshBanner!`，**中断整个响应流**。首页/归档/文章详情三个 SSR 页面全中招；静态页（albums 等）不带这个 island 所以完好。这正是坑 6.1.7 描述的模式（`client:load` island 会在 SSR 期执行）。
+
+**修复**：`if (!visible) return <div role="alert" hidden />;`（返回隐藏占位而不是 null），一处 4 行。实测：wrangler dev 控制台 0 错误，首页连续 3 次完整渲染 159KB（footer/calendar/文章列表 16 条链接全在）；push 后线上 3/3 完整渲染；文章详情页 141KB 完整（含评论/分享）。
+
+**判定页面是否完整的正确方法（教训）**：不能用 `</html>` 判断——**Astro 产物（含预渲染静态页）本来就不输出 `</html>` 闭合标签**；应检查 `footer` 出现次数 ≥1、文章链接数、结尾是否是完整元素而非中途截断。
+
+**诊断手段（沉淀）**：`astro preview` 吞掉 SSR 错误只显示 `GET / 200 OK`；用 **`pnpm dlx wrangler@4 dev -c wrangler.deploy.json --port 4331` 直接跑构建产物**，SSR 异常会完整打印堆栈。（`wrangler tail` 因本机网络连不上 CF tail 端点不可用。）
+
+#### 4.11.3 全站回归（第三轮，结论：零回归）
+
+- 13 个路由全 200（/ /2/ /archive/ /moments/ /albums/ /friends/ /messages/ /about/ /novel/ /anime/ /sitemap-index.xml /robots.txt /auth/callback/）。
+- BFF/后端 health ok；admin 200；www 301；BFF 缓存 `X-Cache: MISS`（失效联动正常）。
+- 首页/归档/文章详情三个 SSR 页面修复后完整渲染；静态页不受影响。
+- 音乐挂件禁用态零残留；启用态卡片渲染正确。
+
 ---
 
 ## 5. 关键实现细节（改代码前必看）
@@ -478,6 +513,8 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 11. **路径别名**：`@config/`、`@data/` 不存在；配置用 `@/config/`，data 用相对路径（如 `../data/anime`）。`@components/`、`@utils/`、`@i18n/` 是正常别名。
 12. **Pagefind 在 Windows 上调用**：`execFileSync("pagefind")` 会报 `spawn pagefind ENOENT`；必须 `shell:true` + 完整路径 `node_modules/.bin/pagefind.cmd`。
 13. **字体子集是静态生成的**：`pnpm fonts:subset` 从当前 API 文章收集字符，新增含生僻字的文章可能缺字（tofu），需重新跑子集化。
+14. **【重大】React/Vue/Svelte island 在 SSR 期返回 `null`/`undefined` 会中断整个响应流**：Astro `renderFrameworkComponent` 抛 `Unable to render <组件名>!`，已 flush 的部分照常发出（HTTP 200），其余全部丢失——页面随机截断且状态码正常，极难察觉（LiveRefreshBanner 因此把首页/归档/文章详情截断了很多天没人发现）。**守则：island 组件 SSR 分支永远返回元素（如 `<div hidden />`），不许 `return null`；新增 SSR 页面 island 后必须验证响应完整性**（检查 footer 出现次数/结尾元素完整，不能用 `</html>` 判断——Astro 产物本来就不输出 `</html>`）。诊断用 `pnpm dlx wrangler@4 dev -c wrangler.deploy.json` 跑构建产物看完整堆栈（`astro preview` 吞错误只显示 200）。见 4.11.2。
+15. **本地 `astro preview` 的 SSR 渲染不可靠且吞错误**（截断、无日志）：需要确定性验证 SSR/侧栏渲染时，用**构建期预渲染 + mock 配置服务器**（`PUBLIC_API_BASE=http://127.0.0.1:9999 pnpm build` 指向只服务 `/api/site-config` 的 node mock，直接断言 `dist/client/**/*.html`），或 `wrangler dev` 跑产物看日志。见 4.11.1/4.11.2。
 
 ### 6.2 Cloudflare（Pages / Workers / DO / Token）
 
@@ -589,17 +626,18 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 | 导航/侧栏未接后台 | 后台改了不生效 | ✅ 已解决（见 4.8⑥） |
 | RSS/atom/llms 404 | 订阅/SEO | ✅ 已解决（见 4.8②） |
 | Yozai 字体 15MB 入库 | 仓库体积 + 首屏 | ✅ 已解决（子集化 770KB，原 TTF 保留作源；CI 自动重新子集化见 4.9.5） |
-| 音乐挂件未启用 | Shirone 特性缺失 | 运行时 stylus 编译与 workerd 冲突；用户新需求是改造成"B 站收藏夹顺序播放"，方案待出，见 7.5② |
+| 音乐挂件未启用 | Shirone 特性缺失 | ✅ 已解决（方案 A 外链卡片上线，后台 music_widget 可配，默认关闭；只差用户填收藏夹链接，见 4.11.1） |
 | 构建期个别图片 compile 后变大 | 体积 | 例：extreme-3 1.6MB→3.8MB；Astro sharp 处理问题，影响小 |
 | 评论无审核流程 | 内容风险 | ✅ 已解决（默认 pending，后台可审核，见 4.8） |
 | cloudflared 隧道持久化 | NAS 重启后需手动拉起 | ✅ 已解决（autorun.sh + start-tunnel.sh，见 4.9.6） |
 | 导航栏中等宽度竖排拥挤 | 1024–1279px 用户看不到完整导航 | ✅ 已修复（断点 lg→xl + nowrap，见 4.9.1）；待 push 上线 |
 | 后台安全日志页空白 | me-logs 接口 404 | ✅ 已解决（login_log 表 + 接口实现，见 4.9.3） |
 | Umami 统计无法后台配置 | 需改代码才能换统计 ID | ✅ 已解决（后台站点配置页 Umami 面板，见 4.9.4） |
+| **SSR 页面响应流被随机截断** | 首页/归档/文章详情经常缺文章列表、footer、侧栏后半段 | ✅ 已修复（LiveRefreshBanner SSR 返回 null 所致，`2f77b19` 已上线并三连验证，见 4.11.2） |
 
 ### 7.5 第二轮需求剩余项与下一步行动（2026-09-13 交接点）
 
-> **当前状态（2026-09-13 续作后）**：本轮 8 项需求中 6 项已完成并**全部上线、线上验收、全站零回归**（详见 4.9 + 4.10）。前端 web 仓 `ebff376` 已 push 且 CI run 34713250765 success；外仓 master 已 push 到 `9d22e78`（03186c3→aa3ac0d→9d22e78）。健康检查中额外发现并修复了 admin /admin 404（bind mount inode 失效，restart 解决，见 4.10.4/坑 6.3.18）。临时调试文件本地与 NAS 已全部清空。**真正待办只剩需要用户输入的 2 项**：②音乐挂件（方案 A 已细化到可直接写码，只差用户一条 B 站收藏夹链接，见下）+ ⑧Umami 端到端（只差用户填真实 websiteId/scriptUrl/shareUrl，见 4.9.4）。③JWT cookie、④TTFB 用户暂缓；⑦文章加密用户明确不做。
+> **当前状态（2026-09-13 第三轮续作后）**：本轮 8 项需求中 6 项已完成并**全部上线、线上验收、全站零回归**（详见 4.9 + 4.10）。第三轮续作（4.11）：**②音乐挂件方案 A 已实现并上线**（MusicLinkCard 外链卡片 + 后台 music_widget 可配，默认关闭，线上验收「启用出卡片/禁用零残留」通过，**只差用户填一条收藏夹链接**）；过程中**发现并修复了 SSR 页面响应流随机截断的重大 bug**（LiveRefreshBanner SSR 返回 null，首页/归档/文章页缺文章列表的元凶，`2f77b19` 已上线三连验证，见 4.11.2）。web 子仓 main = `2f77b19`（两次 CI success：34715783783、34716510215）。**真正待办只剩需要用户输入的 2 项**：②的收藏夹链接 + ⑧Umami 的 websiteId/scriptUrl/shareUrl（都能在后台直接填，无需改代码）。③JWT cookie、④TTFB 用户暂缓；⑦文章加密用户明确不做。
 
 #### ① 前端 web 仓：commit → push → CI 部署 → 线上验收 —— ✅ 已完成（2026-09-13）
 
@@ -617,7 +655,9 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - 1440px：横排 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于）清晰横排 ✓
 - 说说、友链在宽屏正常显示，问题解决。
 
-#### ② 音乐挂件改"点击进 B 站网页版收藏夹顺序播放"（方案已细化到可直接写码，只差用户给收藏夹链接）
+#### ② 音乐挂件改"点击进 B 站网页版收藏夹顺序播放" —— ✅ 代码已上线（默认关闭），只差用户给收藏夹链接
+
+> **第三轮续作已按方案 A 实现**（web commit `cdb840b`，详见 4.11.1）：`MusicLinkCard.astro` 外链卡片 + `site-overrides.ts` 的 musicWidget 解析 + `SideBar.astro` 兜底，三处改动全部上线。启用/禁用状态线上验收均通过。以下为原始方案记录（背景与原理仍有参考价值）。
 
 **用户需求原话**：音乐挂件点击后链接到"网页版 B 站收藏夹"进行**顺序播放**，要求**最小代码代价**。
 
@@ -648,7 +688,7 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - 前端侧栏/浮层用 `<iframe src="https://player.bilibili.com/player.html?bvid=<当前>&autoplay=1&high_quality=1">` 播当前视频，监听 iframe/播放器无法直接拿 ended（跨域），需用 B 站 `&t=` 轮询或 postMessage，到点后把 bvid 指针 +1 换 src 实现顺序连播。
 - 代价：要维护播放列表状态、跨域 ended 检测不可靠（B 站 iframe 不抛 ended 事件，只能靠 duration 计时，用户拖动会错位）、后端要承担对 B 站的请求。**除非用户明确要站内沉浸播放，否则不建议。**
 
-**下一个 AI 动作**：默认按**方案 A** 直接实现（它就是用户要的"最小代价"），实现前只需向用户**要一条收藏夹链接**用于本地/线上点按验证；若用户改主意要站内不跳转播放，再走方案 B。两条方案都不需要用户单独提供 media_id 之外的密钥。
+**下一步（只剩这一步）**：向用户**要一条 B 站收藏夹链接**，然后登录后台 `https://kirameku-api.neutronstar.fun/admin/`（admin/admin123）→ 站点配置 → 编辑 `music_widget` 行的 value 为 `{"enabled":true,"title":"音乐","subtitle":"B站收藏夹 · 点击顺序播放","url":"<收藏夹链接>"}` → 等 ≤60s BFF 缓存 → 线上侧栏应出现音乐卡片、点击新标签打开收藏夹。也可仿 4.9.4 的 Umami 面板做一个 music_widget 专用编辑 UI（非必须）。若用户改主意要站内不跳转播放，再走方案 B。
 
 #### ③ JWT→httpOnly cookie（已解释好处，用户暂不实施）
 
@@ -689,13 +729,11 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 
 #### ⑧ 下一个 AI 接手顺序（Checklist，按序执行）
 
-1. **先 grounding**：`cd web; git log --oneline -2`（应见 ebff376）、外仓 `git log --oneline -4`（应见 9d22e78），两仓 `git status` 都应干净；读本文 0.1 铁律 + 第 1 节架构 + 4.9/4.10 + 第 6 节坑。
-2. **向用户要两样东西**（唯一阻塞项）：(a) B 站收藏夹链接（做音乐挂件方案 A）；(b) Umami 的 websiteId / scriptUrl / shareUrl（做统计端到端）。可一次问清。
-3. **音乐挂件（拿到链接后）**：严格按 ② 方案 A 的 4 步改（新建 MusicLinkCard.astro → site-overrides 加 musicWidget 解析 → SideBar.astro 接 fallback → 后台填 url），本地 build+preview 验收，再显式路径 add/commit/push web 仓走 CI，线上复核侧栏卡片。
-4. **Umami（拿到凭据后）**：登录后台 `https://kirameku-api.neutronstar.fun/admin/`（admin/admin123）→ 站点配置 → Umami 面板填三项并启用；等 ≤60s BFF 缓存过期，查看源码确认 umami script 注入、点"打开统计面板"能看到数据。**注意：若期间重新 build 过 admin 并 robocopy 同步，必须 restart 后端容器（坑 6.3.18）。**
-5. **每步都验收**：前端改动必跑本地 build+preview（dev 不可用）；后端改动走 SMB 同步→rebuild-backend.sh→健康检查；任何改动后跑 8.5 验证清单 + 关键页面 200 检查。
-6. **不要主动做**：③JWT cookie、④TTFB（用户暂缓）、⑦文章加密（用户明确不做），除非用户重新提起。
-7. **完成后同样回写本文**：更新第 3、4、6、7、10 节对应内容（遵循文末"只减不增、同源唯一"原则）。
+1. **先 grounding**：`cd web; git log --oneline -3`（应见 2f77b19 → cdb840b → ebff376）、外仓 `git log --oneline -3`（本文档提交应在最上），两仓 `git status` 都应干净；读本文 0.1 铁律 + 第 1 节架构 + 4.9/4.10/4.11 + 第 6 节坑（尤其新增的 6.1.14/6.1.15）。
+2. **向用户要两样东西**（唯一阻塞项，可一次问清）：(a) B 站收藏夹链接（拿到后按 7.5② 的"下一步"在后台填 `music_widget` 即上线）；(b) Umami 的 websiteId / scriptUrl / shareUrl（后台 Umami 面板直接填）。
+3. **每步都验收**：前端改动必跑本地 build+preview（dev 不可用）；**SSR 页面改动必须验证响应完整性**（footer 次数/结尾元素完整，见坑 6.1.14——状态码 200 不代表页面完整）；后端改动走 SMB 同步→rebuild-backend.sh→健康检查。
+4. **不要主动做**：③JWT cookie、④TTFB（用户暂缓）、⑦文章加密（用户明确不做），除非用户重新提起。
+5. **完成后同样回写本文**：更新第 3、4、6、7、10 节对应内容（遵循文末"只减不增、同源唯一"原则）。
 
 ---
 
@@ -838,7 +876,7 @@ GET  /api/auth/github/login → 307 + Location 指向 github.com
 - 容器：`kirameku-backend`（:8100→8000）、`kirameku-pg`（:15432→5432）；卷 `kirameku_uploads`、`kirameku_pgdata`
 - 域名：`neutronstar.fun`（Worker）、`bff.neutronstar.fun`（BFF Worker）、`kirameku-api.neutronstar.fun`（Tunnel→NAS）
 - 上游 pinned：`b79d301e5e6a8ec897e85b042de43187b571dd5b`
-- **当前版本（2026-09-13 续作后）**：web 子仓 main = `ebff376`（CI run 34713250765 success）；外仓 master = `9d22e78`。两仓工作区均干净。查 CI：`cd web; gh run list --limit 1`；查某步日志：`gh run view <id> --log | Select-String "subset"`。
+- **当前版本（2026-09-13 第三轮续作后）**：web 子仓 main = `2f77b19`（音乐挂件 `cdb840b` + SSR 截断修复 `2f77b19`；CI run 34715783783 / 34716510215 均 success）；外仓 master = 本文档提交。查 CI：`cd web; gh run list --limit 1`；查某步日志：`gh run view <id> --log | Select-String "subset"`。
 - 图床：`https://gcore.jsdelivr.net/gh/neutron-star77/fastimage@main/2026/08/`（派生 `thumbs/`、`full/`）
 - 本机工具：Everything CLI `E:\Program Files (x86)\图拉丁工具箱\图吧工具箱202507\tools\其他工具\Everything\es.exe`；双端推送脚本 `F:\AI\git-templates\sync_and_publish.ps1`
 
