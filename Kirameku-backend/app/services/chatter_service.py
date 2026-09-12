@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from app.models import Chatter, ChatterComment, GitHubUser
 from app.schemas import ChatterCreate, ChatterUpdate, ChatterCommentCreate
+from app.services import comment_service
 
 
 def _comment_to_dict(session: Session, c: ChatterComment, include_ip: bool = False, fetch_replies: bool = False) -> dict:
@@ -199,13 +200,20 @@ def get_chatter_comments_admin(
     page: int = 1,
     size: int = 20,
 ) -> list[dict]:
+    """后台说说评论列表（根评论 + 嵌套回复），带 `target` 让后台显示所属说说。"""
     q = select(ChatterComment).where(ChatterComment.parent_id.is_(None))
     if status:
         q = q.where(ChatterComment.status == status)
     q = q.order_by(ChatterComment.created_at.desc())
     q = q.offset((page - 1) * size).limit(size)
     rows = list(session.exec(q).all())
-    return [_comment_to_dict(session, c, include_ip=True, fetch_replies=True) for c in rows]
+
+    items: list[dict] = []
+    for c in rows:
+        d = _comment_to_dict(session, c, include_ip=True, fetch_replies=True)
+        d["target"] = comment_service.target_info(session, "chatter", c.chatter_id)
+        items.append(d)
+    return items
 
 
 def update_chatter_comment_status(session: Session, comment_id: int, status: str) -> dict:
@@ -220,9 +228,23 @@ def update_chatter_comment_status(session: Session, comment_id: int, status: str
 
 
 def delete_chatter_comment(session: Session, comment_id: int):
+    """删除说说评论（连带子回复），并把所属说说的 comments_count 减回去。"""
     comment = session.get(ChatterComment, comment_id)
     if not comment:
         raise HTTPException(status_code=404, detail="评论不存在")
+
+    replies = list(
+        session.exec(select(ChatterComment).where(ChatterComment.parent_id == comment_id)).all()
+    )
+    removed = len(replies) + 1
+
+    chatter = session.get(Chatter, comment.chatter_id)
+    if chatter is not None:
+        chatter.comments_count = max(0, (chatter.comments_count or 0) - removed)
+        session.add(chatter)
+
+    for reply in replies:
+        session.delete(reply)
     session.delete(comment)
     session.commit()
 

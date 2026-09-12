@@ -77,12 +77,14 @@ def create_comment(
 @router.get("/admin")
 def admin_list_comments(
     status: str | None = None,
+    target_type: str | None = Query(None, description="post / chatter / album"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_session),
     _: dict = Depends(get_current_user),
 ):
-    return comment_service.get_comments_admin(session, status, page, size)
+    """后台评论列表：可按状态 + 所属内容类型过滤，返回项带 `target` 信息。"""
+    return comment_service.get_comments_admin(session, status, target_type, page, size)
 
 
 @router.put("/{comment_id}/status")

@@ -21,7 +21,7 @@ from sqlmodel import Session, SQLModel, select
 from app.config import ALGORITHM, SECRET_KEY
 from app.database import engine
 from app.main import app
-from app.models import Chatter, GitHubUser, Like, User
+from app.models import Chatter, ChatterComment, GitHubUser, Like, User
 from app.utils.auth import create_token, hash_password
 
 
@@ -207,3 +207,73 @@ def test_admin_can_delete_others_comment(client, gh, admin_headers):
         headers=gh["headers"],
     ).json()
     assert client.delete(f"/api/comments/{created['id']}", headers=admin_headers).status_code == 200
+
+
+# ---------------- 后台列表（按内容类型过滤 + 带 target 信息）----------------
+
+def test_admin_list_requires_admin(client):
+    assert client.get("/api/comments/admin").status_code in (401, 403)
+
+
+def test_admin_list_filters_by_target_and_returns_target_info(client, gh, admin_headers):
+    """后台评论列表要能按 post / chatter / album 分开看，并带上所属内容标题。"""
+    chatter_comment = client.post(
+        "/api/comments",
+        json={"target_type": "chatter", "target_id": 1, "content": "后台过滤用-说说"},
+        headers=gh["headers"],
+    ).json()
+    post_comment = client.post(
+        "/api/comments",
+        json={"target_type": "post", "target_id": 999, "content": "后台过滤用-文章"},
+        headers=gh["headers"],
+    ).json()
+
+    only_chatter = client.get(
+        "/api/comments/admin?target_type=chatter", headers=admin_headers
+    ).json()
+    ids = [item["id"] for item in only_chatter]
+    assert chatter_comment["id"] in ids
+    assert post_comment["id"] not in ids
+    # target 信息（说说的内容摘要 + 前台链接）
+    target = next(item["target"] for item in only_chatter if item["id"] == chatter_comment["id"])
+    assert target["type"] == "chatter"
+    assert target["url"] == "/moments"
+    assert target["title"]
+
+    only_post = client.get("/api/comments/admin?target_type=post", headers=admin_headers).json()
+    post_targets = [item["target"]["type"] for item in only_post]
+    assert post_targets and set(post_targets) == {"post"}
+
+    # 收尾：删掉两条测试评论
+    assert client.delete(f"/api/comments/{chatter_comment['id']}", headers=admin_headers).status_code == 200
+    assert client.delete(f"/api/comments/{post_comment['id']}", headers=admin_headers).status_code == 200
+
+
+def test_chatter_admin_list_has_target(client, gh, admin_headers):
+    """说说评论走独立表，后台列表也要带 target 信息。"""
+    created = client.post(
+        "/api/chatters/comments",
+        json={"chatter_id": 1, "content": "说说评论-后台列表"},
+        headers=gh["headers"],
+    ).json()
+
+    rows = client.get("/api/chatters/comments/admin", headers=admin_headers).json()
+    row = next(item for item in rows if item["id"] == created["id"])
+    assert row["target"]["type"] == "chatter"
+    assert row["target"]["id"] == 1
+
+    # 删除时应连带子回复并回退 comments_count
+    reply = client.post(
+        "/api/chatters/comments",
+        json={"chatter_id": 1, "parent_id": created["id"], "content": "子回复"},
+        headers=gh["headers"],
+    ).json()
+    assert reply["parent_id"] == created["id"]
+    assert client.delete(
+        f"/api/chatters/comments/{created['id']}", headers=admin_headers
+    ).status_code == 200
+
+    with Session(engine) as s:
+        assert s.get(ChatterComment, reply["id"]) is None
+        chatter = s.get(Chatter, 1)
+        assert chatter.comments_count == 0

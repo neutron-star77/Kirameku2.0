@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+/**
+ * 评论管理（P5 起评论是多态的，这里统一管两套评论表）
+ *
+ *  - 内容评论：`comment` 表，target_type = post / album
+ *  - 说说评论：`chatter_comment` 表（后端独立的说说评论接口）
+ *
+ * 两套数据结构几乎一致，所以共用一个表格，只按当前 Tab 切换「取数/改状态/删除」的接口。
+ * 列表项都带 `target`（所属内容标题 + 前台链接），方便运营直接点回前台核对。
+ */
+import { ref, onMounted, computed } from "vue";
 import { message } from "@/utils/message";
 import {
   getAdminComments,
@@ -7,32 +16,39 @@ import {
   deleteComment
 } from "@/api/comment";
 import type { CommentItem } from "@/api/comment";
+import {
+  getAdminChatterComments,
+  updateChatterCommentStatus,
+  deleteChatterComment
+} from "@/api/chatter";
 
 defineOptions({ name: "CommentIndex" });
+
+const FRONTEND_ORIGIN = "https://neutronstar.fun";
 
 const loading = ref(false);
 const dataList = ref<CommentItem[]>([]);
 const statusFilter = ref("");
+/** post / album / ""（全部）—— 仅「内容评论」Tab 生效 */
+const targetFilter = ref("");
 const expandedRows = ref<number[]>([]);
+/** content = 文章+相册评论；chatter = 说说评论 */
+const activeTab = ref<"content" | "chatter">("content");
 
-const columns: TableColumnList = [
+const TARGET_LABEL: Record<string, string> = {
+  post: "文章",
+  chatter: "说说",
+  album: "相册"
+};
+
+const columns = computed<TableColumnList>(() => [
   { label: "ID", prop: "id", width: 60 },
-  { label: "用户", prop: "github_user", width: 140, slot: "user" },
-  { label: "内容", prop: "content", minWidth: 250 },
-  { label: "文章ID", prop: "post_id", width: 80 },
+  { label: "用户", prop: "github_user", width: 130, slot: "user" },
+  { label: "内容", prop: "content", minWidth: 220 },
+  { label: "所属内容", prop: "target", minWidth: 200, slot: "target" },
   { label: "IP", prop: "ip", width: 130 },
-  {
-    label: "回复",
-    prop: "replies",
-    width: 70,
-    slot: "replies"
-  },
-  {
-    label: "状态",
-    prop: "status",
-    width: 90,
-    slot: "status"
-  },
+  { label: "回复", prop: "replies", width: 70, slot: "replies" },
+  { label: "状态", prop: "status", width: 90, slot: "status" },
   {
     label: "时间",
     prop: "created_at",
@@ -40,28 +56,42 @@ const columns: TableColumnList = [
     formatter: ({ created_at }) =>
       created_at ? created_at.replace("T", " ").slice(0, 19) : ""
   },
-  {
-    label: "操作",
-    fixed: "right",
-    width: 200,
-    slot: "operation"
-  }
-];
+  { label: "操作", fixed: "right", width: 200, slot: "operation" }
+]);
 
 async function onSearch() {
   loading.value = true;
   try {
     const params: any = { size: 100 };
     if (statusFilter.value) params.status = statusFilter.value;
-    dataList.value = await getAdminComments(params);
+
+    dataList.value =
+      activeTab.value === "content"
+        ? await getAdminComments({
+            ...params,
+            target_type: targetFilter.value || undefined
+          })
+        : await getAdminChatterComments(params);
+    expandedRows.value = [];
+  } catch (e: any) {
+    message(e?.message ?? "加载失败", { type: "error" });
   } finally {
     loading.value = false;
   }
 }
 
+function switchTab() {
+  targetFilter.value = "";
+  onSearch();
+}
+
 async function handleStatus(row: CommentItem, status: string) {
   try {
-    await updateCommentStatus(row.id, status);
+    if (activeTab.value === "content") {
+      await updateCommentStatus(row.id, status);
+    } else {
+      await updateChatterCommentStatus(row.id, status);
+    }
     message("操作成功", { type: "success" });
     onSearch();
   } catch (e: any) {
@@ -71,7 +101,11 @@ async function handleStatus(row: CommentItem, status: string) {
 
 async function handleDelete(row: CommentItem) {
   try {
-    await deleteComment(row.id);
+    if (activeTab.value === "content") {
+      await deleteComment(row.id);
+    } else {
+      await deleteChatterComment(row.id);
+    }
     message("删除成功", { type: "success" });
     onSearch();
   } catch (e: any) {
@@ -95,7 +129,10 @@ function countAllReplies(c: CommentItem): number {
 }
 
 /** 递归展开所有嵌套回复为扁平列表 */
-function flattenReplies(replies: CommentItem[], depth = 0): Array<CommentItem & { _depth: number }> {
+function flattenReplies(
+  replies: CommentItem[],
+  depth = 0
+): Array<CommentItem & { _depth: number }> {
   const result: Array<CommentItem & { _depth: number }> = [];
   for (const r of replies) {
     result.push({ ...r, _depth: depth });
@@ -106,6 +143,10 @@ function flattenReplies(replies: CommentItem[], depth = 0): Array<CommentItem & 
   return result;
 }
 
+function targetUrl(row: CommentItem): string | null {
+  return row.target?.url ? FRONTEND_ORIGIN + row.target.url : null;
+}
+
 onMounted(() => onSearch());
 </script>
 
@@ -113,9 +154,25 @@ onMounted(() => onSearch());
   <div class="p-4">
     <el-card shadow="never">
       <template #header>
-        <div class="flex justify-between items-center">
+        <div class="flex justify-between items-center flex-wrap gap-3">
           <div class="flex items-center gap-3">
-            <span class="font-medium">评论管理</span>
+            <el-radio-group v-model="activeTab" @change="switchTab">
+              <el-radio-button label="content">内容评论（文章/相册）</el-radio-button>
+              <el-radio-button label="chatter">说说评论</el-radio-button>
+            </el-radio-group>
+
+            <el-select
+              v-if="activeTab === 'content'"
+              v-model="targetFilter"
+              placeholder="全部内容类型"
+              clearable
+              class="w-36"
+              @change="onSearch"
+            >
+              <el-option label="文章" value="post" />
+              <el-option label="相册" value="album" />
+            </el-select>
+
             <el-select
               v-model="statusFilter"
               placeholder="全部状态"
@@ -128,6 +185,7 @@ onMounted(() => onSearch());
               <el-option label="已拒绝" value="rejected" />
             </el-select>
           </div>
+          <el-button @click="onSearch">刷新</el-button>
         </div>
       </template>
 
@@ -141,17 +199,30 @@ onMounted(() => onSearch());
       >
         <template #user="{ row }">
           <div class="flex items-center gap-2">
-            <el-avatar
-              v-if="row.github_user"
-              :src="row.github_user.avatar"
-              :size="24"
-            />
-            <el-avatar
-              v-else
-              :size="24"
-              class="bg-slate-300"
-            >?</el-avatar>
+            <el-avatar v-if="row.github_user" :src="row.github_user.avatar" :size="24" />
+            <el-avatar v-else :size="24" class="bg-slate-300">?</el-avatar>
             <span>{{ row.github_user?.login ?? "匿名" }}</span>
+          </div>
+        </template>
+
+        <template #target="{ row }">
+          <div class="flex flex-col items-center gap-1">
+            <el-tag size="small" type="info">
+              {{ TARGET_LABEL[row.target?.type ?? row.target_type] ?? row.target_type }}
+            </el-tag>
+            <a
+              v-if="targetUrl(row)"
+              :href="targetUrl(row)!"
+              target="_blank"
+              rel="noreferrer"
+              class="text-xs text-blue-500 hover:underline line-clamp-1 max-w-48"
+              :title="row.target?.title ?? ''"
+            >
+              {{ row.target?.title || `#${row.target?.id ?? row.target_id}` }}
+            </a>
+            <span v-else class="text-xs text-gray-400">
+              {{ row.target?.title || `#${row.target_id}` }}
+            </span>
           </div>
         </template>
 
@@ -238,11 +309,7 @@ onMounted(() => onSearch());
             class="flex items-start gap-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0"
             :style="{ marginLeft: reply._depth * 32 + 'px' }"
           >
-            <el-avatar
-              v-if="reply.github_user"
-              :src="reply.github_user.avatar"
-              :size="24"
-            />
+            <el-avatar v-if="reply.github_user" :src="reply.github_user.avatar" :size="24" />
             <el-avatar v-else :size="24" class="bg-slate-300">?</el-avatar>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
@@ -296,10 +363,7 @@ onMounted(() => onSearch());
               >
                 拒绝
               </el-button>
-              <el-popconfirm
-                title="确认删除这条回复？"
-                @confirm="handleDelete(reply)"
-              >
+              <el-popconfirm title="确认删除这条回复？" @confirm="handleDelete(reply)">
                 <template #reference>
                   <el-button link type="danger" size="small">删除</el-button>
                 </template>

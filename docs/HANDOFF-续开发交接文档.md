@@ -86,11 +86,32 @@ python --version # 3.11+
 
 `CommentsThread` 增加 `kind="album"` 分支（走多态表 `target_type=album`），挂在相册卡片**内联展开**的照片墙下方；实测 `GET /api/comments?target_type=album&target_id=1` → 200 `[]`。至此**说说 / 文章 / 相册**三类内容都有评论区。
 
+**补做：后台评论管理升级（2026-09-13 完成并线上验收）**
+
+原来后台「评论管理」只列 `comment` 表的文章评论、列头还是个 `文章ID`（多态后该字段多为空），说说评论压根没有入口。本次改成：
+
+后端：
+
+1. `GET /api/comments/admin` 新增 **`target_type` 过滤**（post / album），并给每条根评论返回 **`target`** 对象：`{type, id, title, url}` —— 文章取标题 + `/posts/{slug}`（slug 已 URL 编码），相册取标题 + `/albums`，说说取内容摘要 + `/moments`（实现见 `comment_service.target_info()`）。
+2. `GET /api/chatters/comments/admin`（说说评论，独立表）同样带上 `target`，复用 `comment_service.target_info()`。
+3. 顺手修了个老 bug：`chatter_service.delete_chatter_comment` 只删了自己、**不删子回复也不回退 `chatter.comments_count`** → 现在连带删除并把计数减回去。
+4. 新增 3 个测试（后台鉴权、按类型过滤 + target 信息、说说评论 target + 删除回退计数），`tests/test_likes_and_comments.py` 共 12 例、全量 19 例通过。
+
+后台界面（Vue admin，`admin/src/views/comment/index.vue` 重写）：
+
+- 顶部双 Tab：**内容评论（文章/相册）** / **说说评论**；内容 Tab 下多一个「全部内容类型（文章/相册）」下拉。
+- 列头 `文章ID` → **「所属内容」**：类型标签（文章/说说/相册）+ 标题（点击新窗口打开前台对应页面）。
+- 通过/拒绝/删除按当前 Tab 自动路由到对应接口（`comments/*` 或 `chatters/comments/*`），回复展开逻辑不变。
+
+线上验收：`GET /api/comments/admin?target_type=album` → `target={"type":"album","title":"鬼刀画集 I","url":"/albums"}`；说说评论列表 → `target={"type":"chatter","title":"今天正式把博客推倒重做。删掉了旧脚手架…","url":"/moments"}`；无 token 访问后台接口 403。后台产物经 bind mount 生效（`/admin/static/js/comment-*.js` 200）。
+
+⚠️ 构建后台注意：`pnpm exec vite build` 在 CodeBuddy 里会被**误判成 watch 命令**（返回 "Watch command started"、看不到输出），但实际会跑完 —— 用 `dist/index.html` 时间戳确认，别以为失败了。
+
 **仍然剩余（可选，不急）**：
 
 - JWT 从 localStorage 升级为 httpOnly cookie（需改后端回调形态）。
-- 后台 Vue admin 的评论管理页目前只展示文章评论（`/api/comments/admin` 未按 target 过滤）。
 - 评论创建时未校验目标（album/post/chatter）是否存在，只校验格式；如需严格可在 `create_comment` 里补一次存在性检查。
+- 后台评论分页：当前页面固定取 `size: 100`，没有分页组件（评论量大时再加）。
 
 ---
 
@@ -865,8 +886,9 @@ cd ..\Kirameku-backend
 | GitHub 授权那一下需人工点一次 | ⏳ 打开 `/moments` 点「用 GitHub 登录」即完成（OAuth 固有环节） | 无 |
 | ~~评论多态关联（说说/相册）~~ | ✅ 已支持 post/chatter/album（说说与文章前端已接，相册差一个 adapter 分支） | 无 |
 | ~~点赞防刷（用户维度唯一约束）~~ | ✅ `likes` 表唯一约束 + `/api/likes/toggle`，线上实测不叠加 | 无 |
-| 相册评论 UI | 可选：后端已支持 `album` 维度 | 功能完整性 |
-| 后台评论管理只覆盖文章评论 | 可选：`/api/comments/admin` 未按 target 过滤 | 运营便利 |
+| ~~相册评论 UI~~ | ✅ 已接入（`CommentsThread` 加 album 分支，挂相册展开卡片） | 无 |
+| ~~后台评论管理只覆盖文章评论~~ | ✅ 已升级为「内容评论 / 说说评论」双 Tab + 类型过滤 + 所属内容列（见 0.8） | 无 |
+| 后台评论分页 | 可选：当前固定取 100 条、无分页器 | 评论量大时再加 |
 | 后端 `github_auth.py` 默认值修正 | 已改代码，待下次重建镜像生效 | 无（env 已覆盖） |
 | 旧 CF API Token | 建议用户在 Dashboard 删除 | 安全 |
 | fastimage 两级派生图批量生成 | 待用户确认 | P2 图片策略 |

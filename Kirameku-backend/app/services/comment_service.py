@@ -8,13 +8,52 @@
 再深的回复会被挂到其 parent 的 replies 下（前端按同一层级渲染）。
 """
 
+from urllib.parse import quote
+
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from app.models import Comment, GitHubUser
+from app.models import Album, Chatter, Comment, GitHubUser, Post
 from app.schemas import CommentCreate
 
 SUPPORTED_TARGETS = ("post", "chatter", "album")
+
+
+def _snippet(text: str, length: int = 40) -> str:
+    text = (text or "").strip().replace("\n", " ")
+    return text if len(text) <= length else f"{text[:length]}…"
+
+
+def target_info(session: Session, target_type: str, target_id: int) -> dict:
+    """评论所属内容的信息（后台列表用：显示标题 + 可点回前台）。
+
+    只做单条查询，后台列表页 size 有限（默认 20），不会造成明显 N+1。
+    """
+    if target_type == "post":
+        post = session.get(Post, target_id)
+        return {
+            "type": "post",
+            "id": target_id,
+            "title": post.title if post else None,
+            "url": f"/posts/{quote(post.slug)}" if post else None,
+        }
+    if target_type == "chatter":
+        chatter = session.get(Chatter, target_id)
+        return {
+            "type": "chatter",
+            "id": target_id,
+            "title": _snippet(chatter.content) if chatter else None,
+            "url": "/moments",
+        }
+    if target_type == "album":
+        album = session.get(Album, target_id)
+        return {
+            "type": "album",
+            "id": target_id,
+            "title": album.title if album else None,
+            "url": "/albums",
+        }
+    return {"type": target_type, "id": target_id, "title": None, "url": None}
 
 
 def _comment_to_dict(
@@ -115,16 +154,32 @@ def get_comments_by_id(session: Session, comment_id: int) -> dict:
 def get_comments_admin(
     session: Session,
     status: str | None = None,
+    target_type: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> list[dict]:
+    """后台评论列表（根评论 + 嵌套回复）。
+
+    - `status`：按审核状态过滤
+    - `target_type`：按所属内容类型过滤（post / chatter / album）
+      —— 评论表现在是多态的，后台需要能分类型查看
+    """
     q = select(Comment).where(Comment.parent_id.is_(None))
     if status:
         q = q.where(Comment.status == status)
+    if target_type:
+        q = q.where(Comment.target_type == target_type)
     q = q.order_by(Comment.created_at.desc())
     q = q.offset((page - 1) * size).limit(size)
     rows = list(session.exec(q).all())
-    return [_comment_to_dict(session, c, include_ip=True, fetch_replies=True) for c in rows]
+
+    items: list[dict] = []
+    for c in rows:
+        d = _comment_to_dict(session, c, include_ip=True, fetch_replies=True)
+        # 后台需要知道这条评论挂在哪个内容下（标题 + 可点回前台）
+        d["target"] = target_info(session, c.target_type, c.target_id)
+        items.append(d)
+    return items
 
 
 def create_comment(
