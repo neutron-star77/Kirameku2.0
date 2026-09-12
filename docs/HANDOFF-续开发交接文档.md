@@ -419,7 +419,7 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 
 ### 5.6 后台界面生效机制
 
-`admin/dist` 以 **bind mount** 方式挂进容器（`-v /share/.../backend/admin/dist:/app/admin/dist:ro`）→ **同步 dist 到 NAS 即生效，无需重启容器**。源码改动需 `vite build` 后同步。
+`admin/dist` 以 **bind mount** 方式挂进容器（`-v /share/.../backend/admin/dist:/app/admin/dist:ro`）。源码改动需 `vite build` 后用 robocopy 同步 dist 到 NAS。**注意**：由于 `main.py` 在启动时才判断 `admin/dist.exists()` 并挂载，且 `robocopy /MIR` 会重建目录改变 inode，**同步后必须 `docker restart kirameku-backend`** 才能让容器看到新文件（详见坑 6.3.18）。若容器启动时 dist 已存在且只是覆盖个别文件（非 /MIR 重建），则可免重启。
 
 ---
 
@@ -474,6 +474,7 @@ grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五
 15. **这台 QNAP 没有 `nohup`**（`/usr/bin/nohup` 和 `/bin/nohup` 都不存在）→ 后台常驻进程必须用 `setsid command & < /dev/null`（setsid 在 `/bin/setsid`，让进程在新会话运行，脱离 SSH 控制终端不被 SIGHUP 带走）。用 nohup 会报 `nohup: command not found` 且进程起不来。
 16. **`SQLModel.metadata.create_all` 与 Alembic 迁移冲突**：应用 lifespan 启动时 `init_db()` 会自动为所有已 import 的模型建表。新增模型后，如果先启动新容器再跑 `alembic upgrade head`，create_all 已把表建好，迁移的 `create_table` 会报 `DuplicateTable`。**解法二选一**：(a) 严格先跑迁移再启动新容器；(b) 接受 create_all 建表后核对结构一致，执行 `alembic stamp <revision>` 标记版本。本轮 login_log 表用的是 (b)。
 17. **admin 构建脚本跨平台不兼容**：`package.json` 的 `build` 是 `rimraf dist && NODE_OPTIONS=--max-old-space-size=8192 vite build && generate-version-file`，Unix 内联环境变量写法在 Windows PowerShell/cmd 下报 `'NODE_OPTIONS' is not recognized`。**Windows 上必须**：`$env:NODE_OPTIONS="--max-old-space-size=8192"; npx rimraf dist; npx vite build; npx generate-version-file` 分步执行。
+18. **admin/dist 用 robocopy /MIR 同步后容器内仍 404（bind mount inode 失效）**：后端容器以 `-v 宿主/admin/dist:/app/admin/dist:ro` 挂载，且 `main.py` 在**启动时**一次性判断 `admin_dist.exists()` 才 `app.mount("/admin", ...)`。若容器启动时宿主 dist 为空/不存在，之后再用 `robocopy /MIR` 同步（/MIR 会先清空再重建目录，**目录 inode 改变**），bind mount 仍绑定旧 inode，容器内 `ls /app/admin/dist` 是空的 → /admin 全 404，但宿主源目录文件齐全。**解法**：同步 dist 后 `docker restart kirameku-backend`（重新 bind + 重新走启动挂载判断，几秒中断，不碰 PG）。**最佳顺序**：先 robocopy 同步 dist，再（重）启动后端容器；或在部署脚本里把 restart 作为 admin 同步后的固定收尾步骤。验证：容器内 `ls /app/admin/dist/index.html` 存在 + 公网 `/admin/` 返回 200 text/html + `/admin/static/js/index-*.js` 返回 200。
 
 ### 6.4 工具链 / PowerShell / 命令
 
@@ -684,7 +685,7 @@ ssh hewll 'export DOCKER_HOST=unix:///var/run/docker.sock; D=/share/CACHEDEV1_DA
 #    推荐：写 .sh → Copy-Item 到 U:\kirameku\ → ssh 'tr -d "\r" < /share/.../x.sh | sh'
 #    脚本内：tag 备份 → stop → rm → run -d --name kirameku-backend --restart unless-stopped -p 8100:8000 -e ... -v kirameku_uploads:/app/uploads -v /share/.../admin/dist:/app/admin/dist:ro kirameku-backend:latest
 
-# 5) 后台界面（admin）改动用 SMB 同步即生效（bind mount，无需重启）
+# 5) 后台界面（admin）改动用 SMB 同步（bind mount）
 #    ⚠️ Windows 上 package.json 的 build 脚本（NODE_OPTIONS=... 内联写法）不兼容，必须分步：
 cd admin
 $env:NODE_OPTIONS="--max-old-space-size=8192"
@@ -692,6 +693,9 @@ npx rimraf dist
 npx vite build
 npx generate-version-file
 robocopy "F:\AI\projects\Kirameku2.0\Kirameku-backend\admin\dist" "U:\kirameku\backend\admin\dist" /MIR
+#    ⚠️ /MIR 会重建目录导致 bind mount inode 失效（见坑 6.3.18），同步后必须 restart 后端容器：
+ssh hewll-admin "export DOCKER_HOST=unix:///var/run/docker.sock; /share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker restart kirameku-backend"
+#    验证：curl https://kirameku-api.neutronstar.fun/admin/ 应 200 text/html
 
 # 6) 【有模型变更时】迁移与 create_all 冲突注意：
 #    应用 lifespan 会自动 create_all 建表。若新容器已启动再跑 alembic upgrade head 会报 DuplicateTable。
