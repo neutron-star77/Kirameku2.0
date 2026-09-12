@@ -82,11 +82,15 @@ python --version # 3.11+
 | 作者删除 | `{ok:true}`，且连带删除子回复 ✅ |
 | 文章页 SSR | 已含「评论」标题与「用 GitHub 登录」入口 ✅ |
 
+**补做：相册评论（同日完成）**
+
+`CommentsThread` 增加 `kind="album"` 分支（走多态表 `target_type=album`），挂在相册卡片**内联展开**的照片墙下方；实测 `GET /api/comments?target_type=album&target_id=1` → 200 `[]`。至此**说说 / 文章 / 相册**三类内容都有评论区。
+
 **仍然剩余（可选，不急）**：
 
-- 相册评论：多态表已支持 `target_type="album"`，只差前端加一个 adapter 分支（相册详情/灯箱里挂）。
 - JWT 从 localStorage 升级为 httpOnly cookie（需改后端回调形态）。
 - 后台 Vue admin 的评论管理页目前只展示文章评论（`/api/comments/admin` 未按 target 过滤）。
+- 评论创建时未校验目标（album/post/chatter）是否存在，只校验格式；如需严格可在 `create_comment` 里补一次存在性检查。
 
 ---
 
