@@ -21,6 +21,12 @@ DEFAULT_NAVIGATION = [
 DEFAULT_PUBLIC_CONFIG = {
     "navigation": DEFAULT_NAVIGATION,
     "music_widget": {"enabled": False, "title": "音乐", "subtitle": "悬浮播放器", "url": ""},
+    "umami": {
+        "enable": False,
+        "websiteId": "",
+        "scriptUrl": "",
+        "shareUrl": "",
+    },
     "sidebar_widgets": {
         "author": True,
         "explore": True,

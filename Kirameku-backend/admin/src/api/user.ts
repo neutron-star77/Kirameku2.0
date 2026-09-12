@@ -52,16 +52,21 @@ export const updateMine = (data: {
   });
 };
 
-/** 刷新token（后端暂未实现，占位） */
+/** 刷新token：用仍有效的登录态换发新 access token */
 export const refreshTokenApi = (data?: object) => {
   return http.request<UserResult>("post", "/api/auth/refresh-token", { data });
 };
 
-/** 个人安全日志（后端暂未实现，占位） */
-export const getMineLogs = (data?: object) => {
+/** 个人安全（登录）日志，分页返回 */
+export const getMineLogs = (params?: { page?: number; pageSize?: number }) => {
   return http.request<{
     code: number;
     message: string;
-    data?: { list: Array<any>; total?: number };
-  }>("get", "/api/auth/me-logs", { data });
+    data?: {
+      list: Array<any>;
+      total: number;
+      currentPage: number;
+      pageSize: number;
+    };
+  }>("get", "/api/auth/me-logs", { params });
 };

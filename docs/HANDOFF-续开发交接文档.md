@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-13**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固大部分完成（评论校验/分页/审核/死 island 清理/Shirone 残留清理），剩余 JWT→httpOnly cookie 与音乐挂件启用为架构级改动**，见第 7 节。
+> 进度：**P0–P6 全部完成并线上验收，P7 域名切换完成；可选加固全部完成（评论校验/分页/审核/死 island 清理/Shirone 残留清理）；2026-09-13 第二轮 8 项需求中 6 项已完成并验收（导航修复、Umami 后台可配、CI 自动字体子集、refresh-token/me-logs 接口+登录日志、cloudflared 开机自启、删 5 个死 island），剩余 2 项（前端推送上线、音乐挂件 B 站收藏夹方案）见第 7 节。**
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -115,6 +115,19 @@ cd ..\Kirameku-backend
 | **P5 登录/评论/点赞** | ✅ | GitHub OAuth 全链路；`likes` 唯一约束防重；评论多态（post/chatter/album）+ 后台双 Tab | 评论已加目标存在性校验 + 分页 + 默认 pending 审核（见 4.8） |
 | **P6 Shirone 全特性** | ✅ | RSS/Atom/llms、Lighthouse、字体子集化（14.5MB→770KB）、SSR 自动刷新横幅、导航接后台 API、Pagefind 搜索+mermaid/katex、追番页+分享海报 | 文章加密组件就绪但无加密文章（API 无 encrypted 字段） |
 | **P7 上线** | ✅ | Worker 接管根域 + www 301 + 旧链 `/blog/*→/posts/*`；CI 自动部署；Lighthouse Performance 84 | TTFB ~1640ms（SSR 回源 BFF 固有延迟，非 bug） |
+
+### 3.1 第二轮需求（2026-09-13，用户下达 8 项）
+
+| # | 需求 | 状态 | 关键证据 / 剩余 |
+|:--|:--|:--|:--|
+| ① | JWT→httpOnly cookie 好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
+| ② | TTFB 缓存好处解释 | ✅ 已口头解释 | 纯文字，无代码改动 |
+| ③ | 音乐挂件改 B 站收藏夹顺序播放（最小代价） | ⏳ **方案待出** | 需用户提供 B 站收藏夹 media_id；前端直连 B 站 API 大概率 CORS，可能需 BFF 代理；详见 7.5 |
+| ④ | 3 项小修：删 5 死 island + 后台两占位接口 + cloudflared 自启 | ✅ 全部完成 | 见 4.9①②③ |
+| ⑤ | 排查"说说和友链导航栏看不到" | ✅ 已修复并本地验收 | 根因：中等宽度(1024–1279px)居中导航被挤压竖排；修复：断点 lg→xl + nowrap；**待 push 上线验收** |
+| ⑥ | CI 构建时自动重新子集化字体 | ✅ 已改 deploy.yml | install 后、build 前加 `node scripts/subset-font.mjs`，`continue-on-error` 回退仓库已有子集；**待 push 触发 CI 验证** |
+| ⑦ | 文章加密接入 | ⏸️ 用户明确暂不做 | 组件已就绪，API 无 encrypted 字段 |
+| ⑧ | Umami 统计 ID 放后台配置+查看 | ✅ 全部完成 | 后端默认值 + admin 面板 + 前端覆盖层；见 4.9④ |
 
 ---
 
@@ -272,6 +285,96 @@ cd ..\Kirameku-backend
 - PG 在 bridge 网络 IP `10.0.3.2:5432`（容器名解析在默认 bridge 不工作）。
 - 部署脚本：`scripts/rebuild-backend.sh`（复制到 U:\kirameku\ 后 `sh` 执行）。
 
+### 4.9 第二轮需求（2026-09-13，6 项完成 + 2 项待办）
+
+#### 4.9.1 导航栏"说说/友链看不到"根因与修复（⑤）
+
+**现象**：用户反馈导航栏看不到说说和友链。排查链路：
+1. 直连后端 `https://kirameku-api.neutronstar.fun/api/site-config/navigation` → 返回完整 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于，全 visible:true）。
+2. BFF `https://bff.neutronstar.fun/api/site-config/navigation`（X-Cache:MISS，`s-maxage=60 SWR 300`）→ 同样完整 9 项，排除数据源/缓存问题。
+3. 抓线上首页 SSR HTML 解析，桌面 nav 9 项全部渲染。
+4. **Edge headless 截图定位真因**：1440px 下 9 项横排完全正常；但 **1024px/1180px 宽度下，因 TopAppBar 用 `contentAlign:center` → nav 绝对定位居中（`lg:absolute lg:left-1/2`），9 项被左侧站名+右侧搜索/设置图标挤压，每个两字词被压成竖排、挤成一团**，说说/友链就在其中变得难以辨认。移动端(390)只有汉堡菜单（正常）。
+
+**修复（`web/src/components/organisms/TopAppBar.astro` 三处）**：
+- 横排断点从 `lg`(1024) 提高到 `xl`(1280)：汉堡按钮 `lg:!hidden`→`xl:!hidden`、nav `lg:flex`→`xl:flex`、居中 class 同步 `lg→xl`。
+- 两处 nav-link 加 `shrink-0 whitespace-nowrap` 双保险，防文字竖排。
+- <1280 走汉堡抽屉（抽屉内 9 项完整，SiteNavigationDrawer.svelte onMount fetchNavigation 覆盖静态值）。
+
+**验收**：本地 `pnpm build && pnpm preview` 后 Edge headless 截图——1440px 横排 9 项清晰、1024px 出汉堡菜单无竖排。**待 push main 走 CI 后线上复截验收。**
+
+#### 4.9.2 删 5 个死 island（④-a）
+
+grep 确认 `PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView` 五个 `.tsx` 无任何 import（`DisplaySettings.svelte`、`layout-mode.ts` 引用的是 `PostListMode` 类型，来自 `types/postListConfig`，与组件无关，类型文件保留）。已 `Remove-Item` 删除。islands 目录现存 8 个：AlbumGrid/AuthButton/CommentsThread/FriendsGrid/Lightbox/LiveRefreshBanner/MessagesList/MomentsList。
+
+#### 4.9.3 后台两个占位接口实现 + 登录日志表（④-b）
+
+**背景**：`admin/src/api/user.ts` 第 55-67 行有 `refreshTokenApi`（POST `/api/auth/refresh-token`）和 `getMineLogs`（GET `/api/auth/me-logs`）两个占位，后端均无路由。后台"账号设置-安全日志"页（`SecurityLog.vue`）调用 me-logs，期望 `{code,data:{list:[{summary,ip,address,system,browser,operatingTime}],total,pageSize,currentPage}}`。
+
+**实现**：
+1. **新模型** `app/models/login_log.py`：`LoginLog` 表（id/username/summary/ip/address/system/browser/success/created_at），username+success+created_at 建索引。
+2. **迁移** `migrations/versions/0003_login_log.py`（down_revision=0002_likes_comments）。
+3. **`app/api/auth.py` 重写**：
+   - `login`：成功/失败都写登录日志（`_write_login_log`），IP 优先取 `CF-Connecting-IP`（隧道穿透真实客户端 IP），UA 粗解析 system/browser（不引第三方依赖）；返回的 `refreshToken` 从空字符串改为等于 accessToken。
+   - `POST /api/auth/refresh-token`：`Depends(get_current_user)` 鉴权后重新签发 JWT（无状态，旧 token 自然到期）。
+   - `GET /api/auth/me-logs`：`page/pageSize` Query（默认 1/10），按当前用户 username 查 login_log，created_at 倒序分页。
+4. **`admin/src/api/user.ts`**：更新注释（去掉"后端暂未实现"），getMineLogs 改 `params` 传参，返回类型补全 currentPage/pageSize。
+
+**踩坑（重要）**：应用 lifespan 启动时 `init_db()` → `SQLModel.metadata.create_all(engine)` 会**自动为所有已 import 的模型建表**。新容器启动时 LoginLog 表已被 create_all 建好，但 alembic version 还停在 0002，此时跑 `alembic upgrade head` 报 `DuplicateTable: relation "login_log" already exists`。**解法**：核对 create_all 建出的表结构与模型一致（9 列+3 索引+主键齐全）后，执行 `alembic stamp 0003_login_log` 把版本标记为已应用。**后续新增模型务必先跑迁移再启动新容器，或接受 create_all 建表后 stamp。**
+
+**验收（公网实测）**：
+- `POST /api/auth/login`（admin/admin123）→ code=0，refreshToken 非空，同时写一条成功日志。
+- 故意用错密码登录 → 写一条失败日志（防爆破排查用）。
+- `GET /api/auth/me-logs`（带 token）→ code=0，total=2，list 含成功/失败两条，IP=219.136.153.17（CF 真实 IP 穿透生效），system=Windows，分页字段齐全。
+- `POST /api/auth/refresh-token`（带 token）→ code=0，返回新 token+expires。
+- 无 token 调两接口 → 403（路由已注册，不再 404）。
+
+#### 4.9.4 Umami 后台可配可查看（⑧）
+
+**背景**：前端 `umamiConfig.ts` 是静态配置（enable:false/shareUrl/websiteId/scriptUrl），`Layout.astro` 用 `resolveUmamiOptions()` 解析，有 websiteId+scriptUrl 时注入采集脚本，`UmamiStats.astro` 用 shareUrl 展示访问数。用户要求"Umami 统计 ID 放在后台进行统计和查看"。
+
+**实现（三层）**：
+1. **后端**：`app/services/site_config_service.py` 的 `DEFAULT_PUBLIC_CONFIG` 加 `umami` 默认值 `{enable:false, websiteId:"", scriptUrl:"", shareUrl:""}`。通用 KV 表无需改结构。`GET /api/site-config/umami` 公开返回默认值（实测 200）。
+2. **后台 admin**（`admin/src/views/site-config/index.vue`）：
+   - 头部加"初始化统计配置"按钮。
+   - 表格 value 列对 `key==='umami'` 显示专用行（开启状态+ID 前缀+"编辑统计配置"按钮）。
+   - Umami 编辑对话框：enable 开关 + websiteId + scriptUrl + shareUrl 四个字段；有 shareUrl 时显示"打开 Umami 统计面板（只读）"外链（新窗口打开 Umami 分享仪表盘，即"后台查看"入口）；保存时校验"开启至少需 websiteId 或 shareUrl"。
+3. **前端**：
+   - `web/src/utils/site-overrides.ts`：`SiteOverrides` 加 `umami` 字段，`getSiteOverrides()` 解析 `cfg.umami`（兼容字符串 JSON），新增 `getUmamiOverride()`（enable 且有 websiteId/shareUrl 时返回对齐 `ResolvedUmamiOptions` 的对象，否则 null）。
+   - `web/src/layouts/Layout.astro`：`umamiOptions = (await getUmamiOverride()) ?? resolveUmamiOptions(umamiConfig)`——后台配置优先，未配置回退静态默认（关闭）。
+
+**注意**：前端 `GET /api/site-config` 全量接口只返回数据库中实际存在的行（不合并 DEFAULT_PUBLIC_CONFIG），所以后台未初始化 umami 行时前端拿不到默认值——但此时 `getUmamiOverride()` 返回 null，回退静态 umamiConfig（关闭），行为正确。用户在后台点"初始化统计配置"或保存后，数据库有这行，全量接口即返回。BFF 对 site-config 有 `s-maxage=60` 缓存，保存后最多 60 秒前台生效。
+
+**验收**：后端 `/api/site-config/umami` 返回默认关闭配置；admin 构建产物含 `site-config-*.js` chunk；前端构建通过（Layout.astro 改动无类型错误）。**待用户填入真实 Umami 凭据后端到端验证采集。**
+
+#### 4.9.5 CI 构建时自动重新子集化字体（⑥）
+
+`web/.github/workflows/deploy.yml` 在 Install 后、Build 前加一步：
+```yaml
+- name: Subset CJK font from latest posts
+  run: node scripts/subset-font.mjs
+  continue-on-error: true
+```
+- `subset-font.mjs` 默认 `API_BASE=https://bff.neutronstar.fun`，CI runner 能访问公网，从线上最新文章收集字符。
+- `continue-on-error: true`：网络抖动时不阻断部署，回退仓库内已提交的 `Yozai-Medium.subset.woff2`。
+- 子集产物在 CI 工作区被覆盖后直接用于后续 `pnpm build`，无需回写 git（每次构建都是最新的）。
+- 源 TTF（14.5MB）在仓库里，checkout 即可用；`subset-font` 包在 devDependencies，CI `pnpm install` 已装。
+
+**待 push main 触发 CI 验证该步骤实际执行。**
+
+#### 4.9.6 cloudflared 开机自启持久化（④-c）
+
+**背景**：cloudflared 以 nohup 后台进程运行（非容器非 systemd），NAS 重启会掉。QNAP `/etc/config/autorun.sh` 已存在但引用的 `/share/CACHEDEV1_DATA/cloudflared/` 目录**已不存在**（历史残留），所以开机自启实际失效。
+
+**实现**：
+1. 写幂等启动脚本 `scripts/start-tunnel.sh`，同步到 NAS `/share/CACHEDEV1_DATA/Container/kirameku/start-tunnel.sh`：
+   - 用 `ps w | grep '[c]loudflared'` 检测已有进程（**这台 QNAP 没有 pgrep**，见 6.3.14），有则 skip。
+   - 等网络就绪（ping 1.1.1.1，最多 60 秒）。
+   - 用 **`setsid`** 拉起（**这台 QNAP 没有 nohup**，见 6.3.15），`--protocol http2`（QUIC/UDP 超时，见 6.3.10），日志 `/tmp/cloudflared.log`。
+2. 修改 `/etc/config/autorun.sh`（位于持久 RAID md9，直接改即持久，已备份为 `autorun.sh.bak.20260913025258`）：删除两行失效的旧 cloudflared 引用，替换为调用 `start-tunnel.sh`；保留 hermes agent 自启行。
+3. **完整演练验证**：kill 当前 cloudflared → 跑 start-tunnel.sh → 确认 setsid 拉起新进程（脱离 SSH 会话存活）→ 4 条边缘连接全部 Registered（protocol=http2）→ 公网 `https://kirameku-api.neutronstar.fun/api/health` 返回 ok。
+
+**关键文件**：`scripts/start-tunnel.sh`（生产用，已同步 NAS）、`scripts/restart-tunnel.sh`（手动重启用，kill 后再拉起，已同步 NAS）。
+
 ---
 
 ## 5. 关键实现细节（改代码前必看）
@@ -366,7 +469,11 @@ cd ..\Kirameku-backend
 10. **cloudflared 必须加 `--protocol http2`**：NAS 网络限制 UDP/QUIC，默认 QUIC 协议注册连接后立即 "timeout: no recent network activity"（表现为 API 530/502，进程在跑但未连接边缘）。重启脚本见 `scripts/restart-tunnel.sh`（已复制到 `U:\kirameku\`）。
 11. **后端容器无 `.env` 文件**：env 全部通过 `docker run -e` 传入（DATABASE_URL / SECRET_KEY / CORS_ORIGINS / FRONTEND_ORIGIN / BFF_ORIGIN），重建容器时必须带完整 env。部署脚本见 `scripts/rebuild-backend.sh`。
 12. **PG 在默认 bridge 网络**：容器名 DNS 解析不工作，DATABASE_URL 必须用 IP `10.0.3.2:5432`（PG 重启后 IP 可能变，需重新确认）。
-13. **cloudflared 以 nohup 后台进程运行**（非 systemd 非 Docker），NAS 重启后需手动 `sh /share/CACHEDEV1_DATA/Container/kirameku/restart-tunnel.sh` 拉起。
+13. **cloudflared 以 nohup 后台进程运行**（非 systemd 非 Docker），NAS 重启后需手动 `sh /share/CACHEDEV1_DATA/Container/kirameku/restart-tunnel.sh` 拉起。✅ **2026-09-13 已配置开机自启**：`/etc/config/autorun.sh` 调用 `start-tunnel.sh`（幂等+setsid+http2），见 4.9.6。
+14. **这台 QNAP 没有 `pgrep`**（只有 `pidof`，且 pidof 匹配全名不可靠）→ 检测进程是否存在必须用 `ps w | grep '[c]loudflared'`（`[c]` 技巧排除 grep 自身）。用 `pgrep -f` 会返回 127（command not found），脚本 `if pgrep ...` 会误判为"没运行"而重复拉起进程。
+15. **这台 QNAP 没有 `nohup`**（`/usr/bin/nohup` 和 `/bin/nohup` 都不存在）→ 后台常驻进程必须用 `setsid command & < /dev/null`（setsid 在 `/bin/setsid`，让进程在新会话运行，脱离 SSH 控制终端不被 SIGHUP 带走）。用 nohup 会报 `nohup: command not found` 且进程起不来。
+16. **`SQLModel.metadata.create_all` 与 Alembic 迁移冲突**：应用 lifespan 启动时 `init_db()` 会自动为所有已 import 的模型建表。新增模型后，如果先启动新容器再跑 `alembic upgrade head`，create_all 已把表建好，迁移的 `create_table` 会报 `DuplicateTable`。**解法二选一**：(a) 严格先跑迁移再启动新容器；(b) 接受 create_all 建表后核对结构一致，执行 `alembic stamp <revision>` 标记版本。本轮 login_log 表用的是 (b)。
+17. **admin 构建脚本跨平台不兼容**：`package.json` 的 `build` 是 `rimraf dist && NODE_OPTIONS=--max-old-space-size=8192 vite build && generate-version-file`，Unix 内联环境变量写法在 Windows PowerShell/cmd 下报 `'NODE_OPTIONS' is not recognized`。**Windows 上必须**：`$env:NODE_OPTIONS="--max-old-space-size=8192"; npx rimraf dist; npx vite build; npx generate-version-file` 分步执行。
 
 ### 6.4 工具链 / PowerShell / 命令
 
@@ -380,6 +487,10 @@ cd ..\Kirameku-backend
    - **`pnpm exec vite build`（admin）会被误判成 watch 命令**（返回 "Watch command started"、看不到输出）但**实际会跑完** → 用 `dist/index.html` 时间戳确认。
 6. `pnpm` 会自动按 `package.json` 变更装依赖（改版本后不必手动 install，但会慢一点）。
 7. 前端构建偶发 miniflare `fetch failed / bad port` → 设 `NO_PROXY=127.0.0.1,localhost` 重试。
+8. **Edge headless 多实例并发截图冲突**：在一个循环里连续调用 `msedge --headless --screenshot` 截多个宽度，后两个实例会复用第一个的 user-data-dir 导致截图空白（文件仅 2-3KB）。**解法**：每次截图加 `--user-data-dir="$env:TEMP\edge_shot_<width>"` 独立 profile，或串行执行并加 `--virtual-time-budget=8000` 给足渲染时间。截图前先用 `Invoke-WebRequest` 预热一次页面。
+9. **SSH 远程命令含括号/复杂引号会语法错误**：`ssh hewll-admin 'echo === foo (bar) ==='` 中的括号会被远程 sh 解析报错。**解法**：把命令写成 `.sh` 文件 → `Copy-Item` 到 `U:\kirameku\` → `ssh hewll-admin "sed -i 's/\r$//' /share/.../x.sh && sh /share/.../x.sh"`（sed 去 CRLF 防 `^M` 报错）。这是本项目 NAS 运维的标准模式。
+10. **PowerShell `Get-Content` 读后端 .py 中文显示乱码**：控制台 GBK 编码问题，文件本身是 UTF-8 无损。读文件用 `Get-Content -Encoding UTF8`，或直接用 Read 工具（按 UTF-8 解析）。**不要**用 PowerShell 写中文到 .py/.sh（会编码损坏），一律用 Write/Edit 工具。
+11. **导航栏中等宽度竖排拥挤**：`TopAppBar` 用 `contentAlign:center` 时 nav 绝对定位居中（`lg:absolute lg:left-1/2`），9 项导航在 1024–1279px 被左侧站名+右侧图标挤压，两字词被压成竖排。**解法**：横排断点提高到 `xl`(1280)，nav-link 加 `shrink-0 whitespace-nowrap`，<1280 走汉堡抽屉。见 4.9.1。
 
 ### 6.5 Git / 多仓
 
@@ -418,13 +529,17 @@ cd ..\Kirameku-backend
 
 | 项 | 状态 | 说明 |
 |:--|:--|:--|
-| JWT 从 localStorage 升级为 httpOnly cookie | ⏳ 未做 | 需改后端回调形态（不再 302 带 token，改 Set-Cookie）+ 前端 fetch 带 credentials；架构级改动 |
+| JWT 从 localStorage 升级为 httpOnly cookie | ⏳ 未做（用户已了解好处，暂不实施） | 需改后端回调形态（不再 302 带 token，改 Set-Cookie）+ 前端 fetch 带 credentials；架构级改动。好处见 7.5① |
 | 评论创建时校验目标存在性 | ✅ 已完成 | `_verify_target_exists()`，见 4.8 |
 | 后台评论分页 | ✅ 已存在 | `GET /api/comments/admin` 已有 page/size（默认 20） |
-| 清理 7 个死 island | 🟡 部分完成 | 已删 NavigationIsland/MobileNavigation；剩余 PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView 待确认引用后删除 |
+| 清理 7 个死 island | ✅ 全部完成 | 已删 NavigationIsland/MobileNavigation（上轮）+ PostList/HomeFeed/SidebarVisibility/MusicFloatingCard/PostView（本轮，见 4.9.2）；islands 目录现存 8 个均在用 |
 | `/posts/` 改 301 评估 | ✅ 不需要改 | `/posts/` 当前返回 200 是有效文章列表页，非 meta-redirect |
 | 首页残留 `Shirone` 字样 | ✅ 已清理 | share-poster/siteConfig 默认值改 Neutronstar；其余为内部标识符不可改 |
 | `/api/comments` 读接口分页 | ✅ 已完成 | page/size 参数，默认 100，见 4.8 |
+| 后台 refresh-token / me-logs 占位接口 | ✅ 已完成 | 本轮实现，含 login_log 表+登录埋点，见 4.9.3 |
+| cloudflared 开机自启 | ✅ 已完成 | autorun.sh + start-tunnel.sh（幂等+setsid+http2），见 4.9.6 |
+| CI 自动字体子集化 | ✅ 已改 deploy.yml | install 后 build 前跑 subset-font，continue-on-error 回退，见 4.9.5；待 push 触发 CI 验证 |
+| Umami 后台可配可查看 | ✅ 已完成 | 后端默认+admin面板+前端覆盖层，见 4.9.4；待用户填真实凭据端到端验证 |
 
 ### 7.4 已知缺陷清单
 
@@ -434,11 +549,125 @@ cd ..\Kirameku-backend
 | 前端改动不会自动上线 | 可能忘记部署 | ✅ 已解决（CI 自动部署） |
 | 导航/侧栏未接后台 | 后台改了不生效 | ✅ 已解决（见 4.8⑥） |
 | RSS/atom/llms 404 | 订阅/SEO | ✅ 已解决（见 4.8②） |
-| Yozai 字体 15MB 入库 | 仓库体积 + 首屏 | ✅ 已解决（子集化 770KB，原 TTF 保留作源） |
-| 音乐挂件未启用 | Shirone 特性缺失 | 运行时 stylus 编译与 workerd 冲突，启用前要解决；⏳ 未做 |
+| Yozai 字体 15MB 入库 | 仓库体积 + 首屏 | ✅ 已解决（子集化 770KB，原 TTF 保留作源；CI 自动重新子集化见 4.9.5） |
+| 音乐挂件未启用 | Shirone 特性缺失 | 运行时 stylus 编译与 workerd 冲突；用户新需求是改造成"B 站收藏夹顺序播放"，方案待出，见 7.5② |
 | 构建期个别图片 compile 后变大 | 体积 | 例：extreme-3 1.6MB→3.8MB；Astro sharp 处理问题，影响小 |
 | 评论无审核流程 | 内容风险 | ✅ 已解决（默认 pending，后台可审核，见 4.8） |
-| cloudflared 隧道持久化 | NAS 重启后需手动拉起 | nohup 后台进程，非 systemd/Docker；⏳ 未配置持久化 |
+| cloudflared 隧道持久化 | NAS 重启后需手动拉起 | ✅ 已解决（autorun.sh + start-tunnel.sh，见 4.9.6） |
+| 导航栏中等宽度竖排拥挤 | 1024–1279px 用户看不到完整导航 | ✅ 已修复（断点 lg→xl + nowrap，见 4.9.1）；待 push 上线 |
+| 后台安全日志页空白 | me-logs 接口 404 | ✅ 已解决（login_log 表 + 接口实现，见 4.9.3） |
+| Umami 统计无法后台配置 | 需改代码才能换统计 ID | ✅ 已解决（后台站点配置页 Umami 面板，见 4.9.4） |
+
+### 7.5 第二轮需求剩余项与下一步行动（2026-09-13 交接点）
+
+> **当前状态**：本轮 8 项需求中 6 项已完成并本地/后端验收，**2 项待办**。所有代码改动已落盘，但**前端 web 仓和外仓均未 commit/push**。下一个 AI 接手时按以下顺序推进。
+
+#### ① 前端 web 仓：commit → push → CI 部署 → 线上验收（最高优先，阻塞其他验收）
+
+**已改未提交的文件**（`cd web` 后 `git status` 确认）：
+- `src/components/organisms/TopAppBar.astro`（导航断点 lg→xl + nowrap，见 4.9.1）
+- 已删除：`src/components/islands/{PostList,HomeFeed,SidebarVisibility,MusicFloatingCard,PostView}.tsx`（git 应显示 deleted）
+- `src/utils/site-overrides.ts`（Umami 覆盖层，见 4.9.4）
+- `src/layouts/Layout.astro`（Umami 后台优先，见 4.9.4）
+- `.github/workflows/deploy.yml`（CI 字体子集步骤，见 4.9.5）
+
+**操作步骤**：
+```powershell
+cd F:\AI\projects\Kirameku2.0\web
+git status                           # 确认改动清单
+git add src/components/organisms/TopAppBar.astro
+git add -u src/components/islands/   # 记录 5 个删除
+git add src/utils/site-overrides.ts src/layouts/Layout.astro
+git add .github/workflows/deploy.yml
+git commit -m "fix: nav breakpoint xl + umami backend override + CI font subset + remove dead islands"
+git push origin main
+```
+**铁律**：不要 `git add -A`（0.1 铁律第 2 条）。
+
+**CI 验收**：push 后 `gh run list --limit 1`（或 GitHub Actions 页面）确认 deploy workflow success，重点看 "Subset CJK font" 步骤是否执行（continue-on-error 即使失败也不阻断，但应看到日志输出 `[subset] Collected N unique characters`）。
+
+**线上导航验收**：CI 部署完成后，用 Edge headless 复截三个宽度确认：
+```powershell
+$edge="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+& $edge --headless=new --disable-gpu --no-sandbox --hide-scrollbars --user-data-dir="$env:TEMP\edge_nav" --virtual-time-budget=8000 --window-size=1024,520 --screenshot="nav_1024.png" "https://neutronstar.fun/?cb=$(Get-Random)"
+# 1024 应显示汉堡菜单（☰），无竖排拥挤；1440 应横排 9 项清晰
+```
+预期：1024/1180px 出汉堡按钮，1280+ 横排 9 项（首页/文章/归档/说说/相册/友链/杂谈/小说/关于），文字横排不竖排。
+
+#### ② 音乐挂件改 B 站收藏夹顺序播放（待出方案，需用户输入）
+
+**用户需求**：音乐挂件点击后链接到网页版 B 站收藏夹，进行顺序播放。要求最小代码代价。
+
+**现状**：
+- 前端 `musicConfig.enable=false`（运行时 stylus 编译与 workerd 冲突，原 Shirone 音乐挂件无法直接启用）。
+- `SideBar.astro` 第 66 行动态 `import "virtual:shirone-music-sidebar"`，`astro.config.mjs` 第 33 行 `musicWidgetEnabled` 判断。
+- 后端 `DEFAULT_PUBLIC_CONFIG.music_widget = {enabled:false, title:"音乐", subtitle:"悬浮播放器", url:""}` 是现成后台配置位。
+
+**待确认（需问用户）**：
+1. B 站收藏夹的 `media_id`（收藏夹 ID，在 B 站收藏夹 URL 里，如 `https://space.bilibili.com/xxx/favlist?fid=MEDIA_ID`）。
+2. 交互形态：(a) 点击挂件直接整页跳转到 B 站收藏夹播放页（最简单，零播放器代码）；(b) 站内浮层 iframe 嵌入 B 站播放器顺序连播（B 站外链播放器 `player.bilibili.com/player.html?bvid=XXX&autoplay=1` 只支持单视频，顺序播放需前端维护播放列表+监听 ended 切下一首，代码量中等）。
+
+**最小代价推荐方案（待用户确认后实施）**：
+- 方案 A（最小）：侧栏音乐挂件改成一个链接卡片，点击 `window.open("https://www.bilibili.com/list/mlMEDIA_ID?bvid=第一个视频BV")` 跳到 B 站网页版收藏夹自动播放。代码改动：SideBar 加一个静态卡片组件，不启用原 musicConfig（绕过 stylus/workerd 冲突），后端 music_widget.url 存收藏夹链接。约 30 行代码。
+- 方案 B（站内播放）：后端加接口代理 B 站收藏夹 API（`/x/v3/fav/resource/list?media_id=XXX&ps=20`，前端直连有 CORS），前端侧栏浮层用 `<iframe src="player.bilibili.com/player.html?bvid=...&autoplay=1">` + `onended` 事件切下一首。约 200 行代码+1 个后端代理接口。
+
+**下一个 AI 应先向用户确认 media_id 和交互形态，再实施。**
+
+#### ③ JWT→httpOnly cookie（已解释好处，用户暂不实施）
+
+**好处（已向用户解释）**：
+- 防 XSS 窃取 token（httpOnly cookie 无法被 document.cookie 读取，localStorage 可被 XSS 读走）。
+- 自动随请求携带（fetch 带 `credentials:include`），无需手动塞 Authorization 头。
+- 可设 `Secure` + `SameSite=Lax/Strict`，防 CSRF 面更广。
+- 过期/登出由服务端 Set-Cookie 清空，比前端清 localStorage 更可靠。
+
+**代价/风险**：后端 GitHub OAuth 回调要从"302 带 ?token="改成"Set-Cookie 后 302"；前端所有 `apiGet/apiPost` 要加 `credentials:"include"`；BFF/后端 CORS 要 `allow_credentials=True` 且不能 `allow_origins=*`；CSRF 防护需额外加 token。架构级改动，用户暂不做。
+
+#### ④ TTFB 缓存（已解释好处，用户暂不实施）
+
+**好处（已向用户解释）**：
+- 当前 TTFB ~1640ms 是 SSR 每次回源 BFF 的固有延迟。TTFB 缓存（如 BFF 对 SSR 页面 HTML 做边缘缓存 + stale-while-revalidate）可把重复访问降到 <100ms。
+- 减轻 Worker isolate 冷启动和 BFF 回源压力。
+- 对 SEO 爬虫友好（Google 用 TTFB 作 Core Web Vitals 指标）。
+
+**代价/风险**：页面含用户态（登录状态/评论）时缓存需按身份分键或用客户端水合；写操作后需主动 purge；实现复杂度中等。用户暂不做。
+
+#### ⑤ 文章加密接入（用户明确暂不做）
+
+`ProtectedPost/PasswordGate/post-decryption` 组件已存在但未接入，因 API PostEntry 无 encrypted 字段。用户明确"暂时不用管"。后续要做需：后端 Post 模型加 encrypted/password_hash 字段+迁移，文章详情接口按密码校验返回正文，前端 PasswordGate 组件接入。
+
+#### ⑥ 外仓 commit（后端+admin+脚本+文档）
+
+后端和 admin 改动已部署到 NAS，但**外仓（master 分支）未 commit**。需提交：
+```powershell
+cd F:\AI\projects\Kirameku2.0
+git status
+# 预期改动：
+# Kirameku-backend/app/models/login_log.py (新)
+# Kirameku-backend/app/models/__init__.py
+# Kirameku-backend/app/api/auth.py
+# Kirameku-backend/app/services/site_config_service.py
+# Kirameku-backend/migrations/versions/0003_login_log.py (新)
+# Kirameku-backend/admin/src/api/user.ts
+# Kirameku-backend/admin/src/views/site-config/index.vue
+# scripts/start-tunnel.sh (新)
+# scripts/rebuild-backend-migrate.sh (新，可保留作运维脚本)
+# docs/HANDOFF-续开发交接文档.md (本文件)
+git add <显式路径>
+git commit -m "feat: login_log + refresh-token/me-logs + umami backend config + cloudflared autorun + handoff update"
+git push origin master
+```
+**注意**：`admin/dist` 不入库（gitignored），`Kirameku-backend/admin/dist` 是构建产物。后端源码已同步 NAS 并重建容器，外仓 commit 只是版本记录，不影响线上。
+
+#### ⑦ 临时文件清理
+
+本地 `scripts/` 目录下有本轮调试临时文件，可删：
+- `_home_debug.html`、`_parse_nav.mjs`（导航排查）
+- `_nav_desktop.png`、`_nav_mobile.png`、`_nav_1024.png`、`_nav_1180.png`、`_nav_1280.png`、`_fixed_*.png`（截图）
+- `_inspect-autorun.sh`、`_diag-pgrep.sh`、`_test-idempotent.sh`、`_drill-tunnel.sh`、`_setup-autorun.sh`、`_verify-stamp-loginlog.sh`（NAS 临时脚本，NAS 上 U:\kirameku\ 也有对应文件，可一并删）
+- `rebuild-backend-migrate.sh`（一次性组合脚本，可保留或删）
+
+保留：`start-tunnel.sh`（生产用，已同步 NAS）、`restart-tunnel.sh`（生产用）、`rebuild-backend.sh`、`diag-nas.sh`。
 
 ---
 
@@ -491,8 +720,18 @@ ssh hewll 'export DOCKER_HOST=unix:///var/run/docker.sock; D=/share/CACHEDEV1_DA
 #    脚本内：tag 备份 → stop → rm → run -d --name kirameku-backend --restart unless-stopped -p 8100:8000 -e ... -v kirameku_uploads:/app/uploads -v /share/.../admin/dist:/app/admin/dist:ro kirameku-backend:latest
 
 # 5) 后台界面（admin）改动用 SMB 同步即生效（bind mount，无需重启）
-cd admin; $env:NODE_OPTIONS="--max-old-space-size=8192"; pnpm exec vite build
+#    ⚠️ Windows 上 package.json 的 build 脚本（NODE_OPTIONS=... 内联写法）不兼容，必须分步：
+cd admin
+$env:NODE_OPTIONS="--max-old-space-size=8192"
+npx rimraf dist
+npx vite build
+npx generate-version-file
 robocopy "F:\AI\projects\Kirameku2.0\Kirameku-backend\admin\dist" "U:\kirameku\backend\admin\dist" /MIR
+
+# 6) 【有模型变更时】迁移与 create_all 冲突注意：
+#    应用 lifespan 会自动 create_all 建表。若新容器已启动再跑 alembic upgrade head 会报 DuplicateTable。
+#    解法：核对表结构后 `docker exec kirameku-backend alembic stamp <revision>` 标记版本。
+#    或严格先跑迁移再启动新容器。详见 6.3.16。
 ```
 
 ### 8.4 本地测试
@@ -547,9 +786,10 @@ GET  /api/auth/github/login → 307 + Location 指向 github.com
 
 ### 9.2 待用户提供（不阻塞当前开发）
 
-- **Umami website ID**（统计，可选）
+- **Umami website ID / scriptUrl / shareUrl**（统计，可选）：现在可在后台「站点配置」页直接填写（key=`umami`），无需改代码。填入后前台约 60 秒生效（BFF 缓存），后台 Umami 对话框有"打开统计面板"入口。
 - Giscus 仓库配置（若改用 Giscus 评论，可选；当前用自建评论）
 - 阿里云 OSS AK（当前图片走 NAS 本地 + fastimage，不需要）
+- **B 站收藏夹 media_id**（音乐挂件改造需要，见 7.5②）
 
 ### 9.3 绝不入库
 

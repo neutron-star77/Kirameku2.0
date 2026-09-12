@@ -279,6 +279,67 @@ async function handleImagesSubmit() {
   }
 }
 
+// ---------- Umami 统计（umami） ----------
+const umamiDialogVisible = ref(false);
+const umamiForm = ref({
+  enable: false,
+  websiteId: "",
+  scriptUrl: "",
+  shareUrl: ""
+});
+
+function umamiState(row?: SiteConfigItem) {
+  const fallback = { enable: false, websiteId: "", scriptUrl: "", shareUrl: "" };
+  if (!row) return fallback;
+  try {
+    const value = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+    return { ...fallback, ...(value ?? {}) };
+  } catch {
+    return fallback;
+  }
+}
+
+function openUmamiEditor(row: SiteConfigItem) {
+  umamiForm.value = umamiState(row);
+  umamiDialogVisible.value = true;
+}
+
+async function initializeUmami() {
+  try {
+    await updateSiteConfig("umami", {
+      value: JSON.stringify({ enable: false, websiteId: "", scriptUrl: "", shareUrl: "" }),
+      description: "Umami 访问统计：总开关 + Website ID + 采集脚本 + 分享链接"
+    });
+    msg("统计配置已初始化，可继续编辑 umami", { type: "success" });
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "初始化失败", { type: "error" });
+  }
+}
+
+async function handleUmamiSubmit() {
+  if (umamiForm.value.enable && !umamiForm.value.websiteId && !umamiForm.value.shareUrl) {
+    msg("开启统计至少需要填写 Website ID 或分享链接", { type: "warning" });
+    return;
+  }
+  try {
+    await updateSiteConfig("umami", {
+      value: JSON.stringify({
+        enable: umamiForm.value.enable,
+        websiteId: umamiForm.value.websiteId.trim(),
+        scriptUrl: umamiForm.value.scriptUrl.trim(),
+        shareUrl: umamiForm.value.shareUrl.trim()
+      }),
+      description: "Umami 访问统计：总开关 + Website ID + 采集脚本 + 分享链接"
+    });
+    msg("统计配置已保存，前台约 1 分钟内生效", { type: "success" });
+    umamiDialogVisible.value = false;
+    onSearch();
+  } catch (e: any) {
+    msg(e?.message ?? "保存失败", { type: "error" });
+  }
+}
+
 onMounted(() => onSearch());
 </script>
 
@@ -292,6 +353,7 @@ onMounted(() => onSearch());
             <el-button @click="initializeNavigation">初始化导航配置</el-button>
             <el-button @click="initializeSidebarWidgets">初始化侧边栏配置</el-button>
             <el-button @click="initializeSiteImages">初始化图片配置</el-button>
+            <el-button @click="initializeUmami">初始化统计配置</el-button>
             <el-button type="primary" @click="openAdd">新增配置</el-button>
           </div>
         </div>
@@ -313,6 +375,15 @@ onMounted(() => onSearch());
             </div>
             <el-button link type="primary" size="small" @click="openImagesEditor(row)">
               编辑图片链接
+            </el-button>
+          </div>
+          <div v-else-if="row.key === 'umami'" class="text-left">
+            <div class="text-xs mb-1" :class="umamiState(row).enable ? 'text-green-600' : 'text-gray-400'">
+              {{ umamiState(row).enable ? "● 统计已开启" : "○ 统计未开启" }}
+              <span v-if="umamiState(row).websiteId" class="text-gray-500"> · ID {{ umamiState(row).websiteId.slice(0, 8) }}…</span>
+            </div>
+            <el-button link type="primary" size="small" @click="openUmamiEditor(row)">
+              编辑统计配置
             </el-button>
           </div>
           <div v-else-if="row.key === 'sidebar_widgets'" class="flex flex-wrap gap-3 text-left">
@@ -424,6 +495,42 @@ onMounted(() => onSearch());
       <template #footer>
         <el-button @click="imagesDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleImagesSubmit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Umami 统计配置对话框 -->
+    <el-dialog
+      v-model="umamiDialogVisible"
+      title="编辑 Umami 访问统计"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="110px">
+        <el-form-item label="启用统计">
+          <el-switch v-model="umamiForm.enable" />
+          <span class="ml-2 text-xs text-gray-500">关闭后前台不加载任何统计脚本</span>
+        </el-form-item>
+        <el-form-item v-if="umamiForm.shareUrl" label="查看数据">
+          <el-link type="primary" :href="umamiForm.shareUrl" target="_blank" rel="noopener">
+            打开 Umami 统计面板（只读）
+          </el-link>
+        </el-form-item>
+        <el-form-item label="Website ID">
+          <el-input v-model="umamiForm.websiteId" placeholder="Umami 站点 ID（采集用）" />
+        </el-form-item>
+        <el-form-item label="采集脚本 URL">
+          <el-input v-model="umamiForm.scriptUrl" placeholder="如 https://your-umami/script.js" />
+        </el-form-item>
+        <el-form-item label="分享链接">
+          <el-input v-model="umamiForm.shareUrl" placeholder="Umami 只读分享页 URL（前台统计卡片用）" />
+        </el-form-item>
+        <div class="text-xs text-gray-400 pl-[110px]">
+          Website ID + 采集脚本同时填写才会注入访问采集；分享链接用于前台展示访问量。
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="umamiDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleUmamiSubmit">保存</el-button>
       </template>
     </el-dialog>
   </div>
