@@ -23,5 +23,5 @@ class Comment(SQLModel, table=True):
     content: str
     likes: int = Field(default=0)
     ip: str = Field(default="", max_length=45)
-    status: str = Field(default="approved", max_length=20, index=True)
+    status: str = Field(default="pending", max_length=20, index=True)
     created_at: datetime = Field(default_factory=datetime.now)
