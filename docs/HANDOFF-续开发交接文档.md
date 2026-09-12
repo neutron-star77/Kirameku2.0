@@ -53,11 +53,40 @@ python --version # 3.11+
 
 **最后一步（只能人工点一次）**：打开 `https://neutronstar.fun/moments/` → 右上角「用 GitHub 登录」→ 在 GitHub 页面点 Authorize → 应回到 `neutronstar.fun/auth/callback` 再跳首页，右上角变成头像 + `@login`。这一步是 OAuth 的固有环节（需要用户在 GitHub 授权），无法在服务端代跑。
 
-**P5 剩余（凭据到位后继续）**：
+**P5 续做：点赞防刷 + 评论区（2026-09-12 已完成并线上验收）**
 
-- 评论区：后端 `/api/comments` 目前**只支持 post 维度**（`GET /api/comments/post/{id}`），要覆盖说说/相册需加多态关联（`target_type + target_id` + 索引）与楼中楼 `parent_id`；前端再做对应的 island。
-- 点赞防刷：现有 `like|unlike` 只是计数增减，**无用户维度唯一约束**；要做"我的点赞态/防重复点赞"需加 `like` 关联表（`user_id + target_type + target_id` 唯一）+ Alembic 迁移。
-- 可选：JWT 从 localStorage 升级为 httpOnly cookie（需改后端回调形态）。
+后端：
+
+1. **新表 `likes`**（`app/models/like.py`）：`user_id + target_type + target_id` 唯一约束（`uq_likes_user_target`）。表名刻意用复数 —— `like` 是 SQL 关键字。目标表的 `likes` 字段降级为**冗余计数**，真值在本表行数。
+2. **评论多态**（`app/models/comment.py`）：新增 `target_type`（post/chatter/album）+ `target_id`，`post_id` 改为可空（历史数据用 post_id 回填）。
+3. **Alembic `0002_likes_comments`**：建 likes 表 + 回填 + 放开 `post_id` 非空 + 建 `(target_type, target_id)` 索引。⚠️ **迁移必须在应用容器重启前跑**，否则新代码启动时 `SQLModel.metadata.create_all` 会先把 likes 表建出来、导致迁移报"表已存在"。执行方式：`docker run --rm -w /app -e DATABASE_URL=... kirameku-backend:latest alembic upgrade head`。
+4. **新接口**：`POST /api/likes/toggle`（**需登录**，幂等切换，并发重复点赞靠唯一约束兜底，不会 +2）、`GET /api/likes/mine?target_type=`（未登录返回空数组不报错）。
+5. **评论接口**：`GET /api/comments?target_type=&target_id=`（多态）、`POST /api/comments`（`target_type/target_id`，仍兼容只传 `post_id`）、`DELETE /api/comments/{id}`（**作者本人或后台管理员**可删，连带删子回复）、评论点赞兼容接口保留但改为需登录 + 幂等。
+6. 测试：`tests/test_likes_and_comments.py` 9 个用例（未登录 401、重复点赞不叠加、我的点赞态、多态评论、楼中楼、跨目标拒绝、作者/他人/管理员删除权限）—— 全量 16 个测试通过。
+
+前端：
+
+- 新 island `CommentsThread.tsx`：一个组件适配两套后端表（`kind="chatter"` 走说说专用表、`kind="post"` 走多态表），含楼中楼两层、回复、点赞、删除自己的评论、未登录显示登录入口；已接入**说说展开卡片**与**文章详情页**。
+- `MomentsList` 点赞改走 `/api/likes/toggle`（登录 + 去重），登录后回填"我点过赞的说说"，未登录点zan会提示去登录。
+- 踩坑：`PostEntry` 里原来只带 slug（字符串），评论需要文章数字 id → 给适配层 `content-utils.ts` 补了 `postId`（`p.id`）透传。
+
+线上验收（用一次性验证账号 + 自签 JWT 实跑，跑完已清理干净）：
+
+| 检查 | 结果 |
+|:--|:--|
+| 未登录点赞 / 发评论 | 401 ✅ |
+| 首次点赞 → 再点 → 第三次 | `{liked:true,likes:1}` → `{liked:false,likes:0}` → `{liked:true,likes:1}`（**不叠加**）✅ |
+| `GET /api/likes/mine` | `{ids:[1]}` ✅ |
+| 发评论（chatter 维度） | 200，`post_id=null`、`target_type=chatter` ✅ |
+| 楼中楼回复 | 1 根 + 1 回复 ✅ |
+| 作者删除 | `{ok:true}`，且连带删除子回复 ✅ |
+| 文章页 SSR | 已含「评论」标题与「用 GitHub 登录」入口 ✅ |
+
+**仍然剩余（可选，不急）**：
+
+- 相册评论：多态表已支持 `target_type="album"`，只差前端加一个 adapter 分支（相册详情/灯箱里挂）。
+- JWT 从 localStorage 升级为 httpOnly cookie（需改后端回调形态）。
+- 后台 Vue admin 的评论管理页目前只展示文章评论（`/api/comments/admin` 未按 target 过滤）。
 
 ---
 
@@ -830,8 +859,10 @@ cd ..\Kirameku-backend
 | 构建期个别图片 compile 后变大 | P2 图片策略复核 | 性能 |
 | ~~GitHub OAuth App 凭据（Client ID/Secret）~~ | ✅ 已配进 NAS 容器 env，`/login` 已 307 到 GitHub（见 0.8） | 无 |
 | GitHub 授权那一下需人工点一次 | ⏳ 打开 `/moments` 点「用 GitHub 登录」即完成（OAuth 固有环节） | 无 |
-| 评论多态关联（说说/相册） | P5 剩项：`/api/comments` 目前只支持 post | 评论区功能 |
-| 点赞防刷（用户维度唯一约束） | P5 剩项：现为纯计数 | 数据可信度 |
+| ~~评论多态关联（说说/相册）~~ | ✅ 已支持 post/chatter/album（说说与文章前端已接，相册差一个 adapter 分支） | 无 |
+| ~~点赞防刷（用户维度唯一约束）~~ | ✅ `likes` 表唯一约束 + `/api/likes/toggle`，线上实测不叠加 | 无 |
+| 相册评论 UI | 可选：后端已支持 `album` 维度 | 功能完整性 |
+| 后台评论管理只覆盖文章评论 | 可选：`/api/comments/admin` 未按 target 过滤 | 运营便利 |
 | 后端 `github_auth.py` 默认值修正 | 已改代码，待下次重建镜像生效 | 无（env 已覆盖） |
 | 旧 CF API Token | 建议用户在 Dashboard 删除 | 安全 |
 | fastimage 两级派生图批量生成 | 待用户确认 | P2 图片策略 |
