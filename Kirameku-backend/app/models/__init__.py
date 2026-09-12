@@ -2,6 +2,7 @@ from app.models.user import User
 from app.models.github_user import GitHubUser
 from app.models.post import Post, Category, Tag, PostTag
 from app.models.comment import Comment
+from app.models.like import Like
 from app.models.message import Message
 from app.models.chatter import Chatter, ChatterComment
 from app.models.album import Album, Photo
@@ -16,6 +17,7 @@ __all__ = [
     "GitHubUser",
     "Post", "Category", "Tag", "PostTag",
     "Comment",
+    "Like",
     "Message",
     "Chatter", "ChatterComment",
     "Album", "Photo",

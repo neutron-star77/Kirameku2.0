@@ -149,3 +149,11 @@ def get_github_user_optional(request: Request, session: Session) -> GitHubUser |
         return session.get(GitHubUser, user_id)
     except Exception:
         return None
+
+
+def require_github_user(request: Request, session: Session) -> GitHubUser:
+    """必须登录（P5 点赞等写操作）：未登录/过期直接 401，前端据此提示去登录。"""
+    user = get_github_user_optional(request, session)
+    if user is None:
+        raise HTTPException(401, "请先登录 GitHub")
+    return user

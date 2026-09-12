@@ -8,6 +8,7 @@ from app.api.posts import router as posts_router
 from app.api.categories import router as categories_router
 from app.api.tags import router as tags_router
 from app.api.comments import router as comments_router
+from app.api.likes import router as likes_router
 from app.api.messages import router as messages_router
 from app.api.chatters import router as chatters_router
 from app.api.albums import router as albums_router
@@ -27,6 +28,7 @@ api_router.include_router(posts_router)
 api_router.include_router(categories_router)
 api_router.include_router(tags_router)
 api_router.include_router(comments_router)
+api_router.include_router(likes_router)
 api_router.include_router(messages_router)
 api_router.include_router(chatters_router)
 api_router.include_router(albums_router)

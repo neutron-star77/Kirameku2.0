@@ -6,6 +6,7 @@ from app.schemas.category import (
 )
 from app.schemas.comment import (
     CommentCreate, CommentOut, CommentAdminUpdate,
+    LikeIn, LikeOut,
     MessageCreate, MessageOut, MessageAdminUpdate,
 )
 from app.schemas.chatter import (
@@ -27,6 +28,7 @@ __all__ = [
     "CategoryCreate", "CategoryUpdate", "CategoryOut",
     "TagCreate", "TagUpdate", "TagOut",
     "CommentCreate", "CommentOut", "CommentAdminUpdate",
+    "LikeIn", "LikeOut",
     "MessageCreate", "MessageOut", "MessageAdminUpdate",
     "ChatterCreate", "ChatterUpdate", "ChatterOut",
     "ChatterCommentCreate", "ChatterCommentOut",

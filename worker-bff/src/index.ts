@@ -80,6 +80,8 @@ function tagsForPath(path: string): string[] {
   if (path.startsWith("/api/posts")) tags.add("posts");
   if (path.startsWith("/api/categories") || path.startsWith("/api/tags")) tags.add("posts");
   if (path.startsWith("/api/friend-links")) tags.add("friends");
+  if (path.startsWith("/api/comments")) tags.add("comments");
+  if (path.startsWith("/api/likes")) tags.add("all");
   if (path.startsWith("/api/site-config")) tags.add("site");
   if (path.startsWith("/bff/home")) {
     tags.add("posts");
