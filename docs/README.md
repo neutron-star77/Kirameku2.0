@@ -11,11 +11,11 @@
 
 | 项 | 值 |
 |:--|:--|
-| 正式站 | **https://neutronstar.fun**（Astro SSR on Cloudflare Workers，Shirone 外壳 + 真实数据） |
+| 正式站 | **https://neutronstar.fun**（Astro SSR on Cloudflare Workers，Shirone 外壳 + 真实数据；**第四轮新增壁纸三模式/视口预取/首页边缘缓存**） |
 | 后台 | https://kirameku-api.neutronstar.fun/admin/（admin/admin123，改密见运维速查 9.1） |
 | 数据 | 文章 **11 篇**（三代博客已迁齐）、说说 1、相册 6 册 234 图、友链 0、留言 0、B 站收藏夹 26 首 |
-| 版本 | web 子仓 main = `2bca990`（悬浮播放器+四修复）；外仓 master = 文档提交；后端镜像含 `/api/bili-fav` |
-| 最新大功能 | 音乐悬浮播放器（站内播放/拖动/连播/列表/缩放）；SSR 截断重大 bug 已修；旧文迁移闭环 |
+| 版本 | web 子仓 main = `240b25b`（壁纸三模式+视口预取+首页边缘缓存）；BFF 已部署 `a13ab2b`（WEB_ORIGIN 联动清缓存）；后端镜像含 `/api/bili-fav` |
+| 最新大功能 | 音乐悬浮播放器；**壁纸三模式实时切换（右下角设置面板）；文章卡进视口自动预取（点击秒开）；首页 HTML 边缘缓存（发文 webhook 联动失效）** |
 | 待办唯一阻塞 | Umami 凭据（P0，可选）；友链/杂谈/关于/小说内容（P1） |
 
 进度全景与开发史：[`项目全景与开发史.md`](项目全景与开发史.md)（时间线 P0→第三轮、功能清单、数据现状、坑精华、待办优先级）。

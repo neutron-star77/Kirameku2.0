@@ -127,6 +127,15 @@ cd ..\Kirameku-backend
 | ⑦ | 文章加密接入 | ⏸️ 用户明确暂不做 | 组件已就绪，API 无 encrypted 字段 |
 | ⑧ | Umami 统计 ID 放后台配置+查看 | ✅ 全部完成 | 后端默认值 + admin 面板 + 前端覆盖层；见 4.9④ |
 
+### 3.2 第四轮需求（2026-09-13，对照 Twilight 主题的三项现代化）
+
+| # | 需求 | 状态 | 关键证据 / 剩余 |
+|:--|:--|:--|:--|
+| ① | 壁纸三模式实时切换（横幅/全屏沉浸/纯色，对齐 Twilight PR#36） | ✅ 已上线验证 | 显示设置面板三选 + BannerStage fixed 全屏形态 + localStorage 记忆；线上截图验收（站名/打字机浮壁纸、内容卡浮层）；commit `bba675d`；见 4.12.1 |
+| ② | 文章页预取（"趁浏览首页时偷偷加载"） | ✅ 已上线验证 | swup preload 原已覆盖 hover/touch；新增 Astro prefetch viewport 只标文章卡（分工防重复请求）；本地实测预取后点击 229ms 完成 URL 切换、swup 零新请求；commit `5ac5898`；见 4.12.2 |
+| ③ | 首页 HTML 边缘缓存（TTFB 1.6s → 边缘命中） | ✅ 已上线验证 | web middleware Cache API + HMAC 清缓存端点 + BFF 联动转发 + secret 已配；线上 MISS→HIT、模拟发文 webhook 后首页秒级失效重建、错误签名 401；commit `240b25b` + BFF `a13ab2b`；见 4.12.3 |
+| — | Twilight 其余差距项（T4 看板娘/T1 Loading/T5-T8） | ⏸️ 按用户取舍 | T4 用户明确不要；T1 与提速目标冲突不建议；T5-T8（作品集/履历/仓库卡/音乐卡）待用户点名 |
+
 ---
 
 ## 4. 已完成工作详细记录
@@ -476,6 +485,47 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - **旧文章迁移补齐后复验**：文章 8→11 篇（洛神赋/千字文/难经），详情页完整渲染，`/api/posts` 11 条、BFF 与后端一致，归档/首页分页正常。
 
 ---
+
+#### 4.12 第四轮续作（2026-09-13 晚）：对照 Twilight 的三项现代化
+
+**背景与取舍**：用户提供 Twilight（Spr-Aachen，Astro 5 静态模板，MIT）对比。结论：与本站 Shirone 外壳同族（Fuwari 系），60% 视觉特效已内置（Ken Burns 运镜/打字机/水波/hue 滑杆/顶栏透明/Fancybox）；真实差距 = 4 视觉特效 + 2 内容页 + 2 Markdown 件。**不整体换壳**（Twilight 纯静态 getCollection 架构与本站 SSR 实时数据哲学相反，换壳=重做 P1+P2）。用户选定：壁纸模式切换（最想要）+ prefetch + 首页边缘缓存；T4 看板娘明确不要；T1 Loading 与提速目标冲突不做；T5-T8 待点名。**swup 页面过渡本就内置**（integration/index.ts:461），修正了首轮分析里"T3 是差距"的误判。
+
+#### 4.12.1 壁纸三模式实时切换（web `bba675d`）
+
+Twilight 壁纸模式为 `fullscreen | banner | none`（PR#36 已合并）。本站原有 banner/none 双模式基础设施（setting-utils 存取 + ConfigCarrier SSR 默认值 + DisplaySettings 两选 UI + WALLPAPER_MODE_CHANGE_EVENT 广播），本次**加第三态 fullscreen**：
+
+1. `types/config.ts` + `setting-utils.isWallpaperMode` + `Layout.astro` 防闪 inline 脚本白名单：三处同步加 "fullscreen"。
+2. `utils/banner-state.ts` resolveBannerState：fullscreen 分支——visible=imageCount>0（全页全视口常驻，移动端非首页也显示）；copyMode 非首页为 null（壁纸退纯背景）；contentLayout 强制 compact（内容顶格）；transparentTopAppBar=true（顶栏白字浮壁纸）。
+3. `BannerStage.astro`：CSS 加 `html[data-wallpaper-mode=fullscreen] .banner-stage { position:fixed; inset:0; height:100dvh; z-index:-1 }`——**轮播/KenBurns/打字机/预加载运行时原样复用**；syncBanner 里 fullscreen 时图组缺失回退另一组（mobile 空用 desktop 图）；移动端"非首页隐藏"规则加 fullscreen 豁免。
+4. 首页标题让位：fullscreen+home 时 #main-layout top:62vh（移动 58vh）+ copy 块 padding-bottom:12vh——站名/副标题完整浮壁纸，内容卡从下方开始。
+5. 可读性：fullscreen 下 #swup-container 垫 86% surface-container 毛玻璃面板（归档/文章等裸列表页直接叠壁纸不可读，实测后加）。
+6. DisplaySettings 三选 + 10 语言词条（zh_CN/zh_TW/en/ja/ko/es/id/th/tr/vi）。
+
+**验证**：三模式切换/localStorage 记忆/刷新防闪/swup 切页保持/banner 模式无回归，全部通过；线上截图验收（全屏沉浸首页 + 归档毛玻璃面板 + 文章页正文面板）。
+
+#### 4.12.2 文章卡视口预取（web `5ac5898`）
+
+现状盘点：@swup/astro 已配 `preload:true`+`cache:true`（integration/index.ts:461）——**hover/touch 预取已存在**。缺口=「访客滚动浏览时自动预取」。实现：astro.config 启用 `prefetch:{prefetchAll:false, defaultStrategy:"hover"}`（其余链接不预取防与 swup 重复），PostCard 标题/封面链接 `data-astro-prefetch="viewport"`（进视口 300ms 后 link rel=prefetch，2g/saveData 自动跳过）。本地实测：预取后点击文章卡 **229ms 完成 URL 切换、swup 零新请求**（命中预取缓存）；线上验证 11 链接标注、视口内文章页自动预取 48KB。
+
+#### 4.12.3 首页 HTML 边缘缓存（web `240b25b` + BFF `a13ab2b`）
+
+TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
+
+1. **web/src/middleware.ts**：GET /（无 query）走 Cache API（per-PoP）。命中直返；未命中 SSR 后 put 一份（`Cache-Control: public, max-age=180` 兜底 TTL）。**给访客的响应一律 no-store**——浏览器行为与改造前一致（发文后刷新立即见新），缓存只在边缘。`X-HTML-Cache: HIT/MISS` 头供验证。
+2. **web/src/pages/internal/revalidate-html.ts**：HMAC 校验（与 BFF 同构：REVALIDATE_SECRET + HMAC-SHA256 hex + timing-safe 比较）→ `caches.default.delete`。secret 经 CF API 设置（PUT /accounts/{acc}/workers/scripts/neutronstar-web/secrets，避开 wrangler secret put 的 stdin 换行坑 6.2.6）。
+3. **BFF**：`/internal/revalidate` 收到 webhook 后**原样转发 raw body+签名**到 `${WEB_ORIGIN}/internal/revalidate-html/`（web 端独立验证，零重算；best-effort waitUntil 不阻塞响应）。wrangler.toml 加 `WEB_ORIGIN` var。
+
+**失效链路（全闭合）**：后台发布 → 后端 cache_invalidate.py HMAC webhook → BFF（清聚合缓存 26 项+tag 索引+SSE 广播）→ 联动转发 → web 清首页 HTML → 访客下次请求 MISS 重建新内容。
+
+**验证（线上）**：首页 MISS→HIT；HMAC 端点正确签名 200 {purged:true}、错误签名 401；模拟发文 webhook 后首页 MISS 重建；内容完整 156KB（footer/结尾闭合）。本机测得 HIT 比 MISS 快 1-4s（本机到欧洲边缘固定网络开销占大头，真实收益=省掉回源 NAS+SSR 的 ~1.6s）。
+
+#### 4.12.4 第四轮踩坑沉淀（新增坑大全 6.1.17-6.1.21）
+
+1. **workerd Illegal invocation**：ExecutionContext.waitUntil 解构后裸调用丢 this → 绑定调用（middleware 首版 500 根因）。
+2. **Response.body.tee() 截断**：访客提前关闭连接会截断 tee 另一支 → Cache API 里存进缺尾部的 HTML（丢 footer 段）；修法=全量 arrayBuffer 后分别构造（首页 150KB 可忽略）。
+3. **Cache API 强制同源**：put/match/delete 的 Request URL 必须与 worker 收到的请求同源，跨源**静默失败**（无报错）→ 键必须用 new URL(request.url).host 动态构造，不能写死正式域名。
+4. **astro preview 不读 .dev.vars**：preview 的 miniflare 由 vite cloudflare 插件构建，运行时 secret（cloudflare:workers env）在本地 preview 拿不到——本地验证 HMAC 端点要么 wrangler dev 要么直接线上验。Astro 7 读运行时 env 用 `import { env } from "cloudflare:workers"`（locals.runtime.env 已移除并抛错）。
+5. **ARIA 隐式 role 陷阱（诊断方法论）**：SegmentedButton 渲染 input[type=radio]（隐式 radio role），querySelectorAll('[role=radio]') 查不到 → 曾误判线上"三选组缺失"排查近一小时；正确姿势=直接看原始 innerHTML/用 Playwright getByRole（匹配隐式 role）。
 
 ## 5. 关键实现细节（改代码前必看）
 
