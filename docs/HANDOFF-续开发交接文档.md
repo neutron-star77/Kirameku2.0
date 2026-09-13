@@ -134,6 +134,9 @@ cd ..\Kirameku-backend
 | ① | 壁纸三模式实时切换（横幅/全屏沉浸/纯色，对齐 Twilight PR#36） | ✅ 已上线验证 | 显示设置面板三选 + BannerStage fixed 全屏形态 + localStorage 记忆；线上截图验收（站名/打字机浮壁纸、内容卡浮层）；commit `bba675d`；见 4.12.1 |
 | ② | 文章页预取（"趁浏览首页时偷偷加载"） | ✅ 已上线验证 | swup preload 原已覆盖 hover/touch；新增 Astro prefetch viewport 只标文章卡（分工防重复请求）；本地实测预取后点击 229ms 完成 URL 切换、swup 零新请求；commit `5ac5898`；见 4.12.2 |
 | ③ | 首页 HTML 边缘缓存（TTFB 1.6s → 边缘命中） | ✅ 已上线验证 | web middleware Cache API + HMAC 清缓存端点 + BFF 联动转发 + secret 已配；线上 MISS→HIT、模拟发文 webhook 后首页秒级失效重建、错误签名 401；commit `240b25b` + BFF `a13ab2b`；见 4.12.3 |
+| ④ | 侧栏文章目录（TOC）修复：数据链路断裂 | ✅ 已上线验证 | [slug].astro 从渲染 HTML 提取 h2-h4（rehype-slug 已有 id）传 headings——该 prop 自 P2 起从未接入；TableOfContents 自带 scrollspy/active 高亮/平滑滚动，数据接上即用；线上截图验收（目录+滚动跟随高亮）；commit `9f8ef54` |
+| ⑤ | 顶栏壁纸快速切换按钮 | ✅ | WallpaperSwitch 一键循环三模式（与面板共用存取/广播）；`9f8ef54` |
+| ⑥ | 顶栏语言切换（整页机翻） | ✅ | translate.js v3（MIT，vendor 到 public/translate.js，与 Twilight 同款底层）；中→EN 两态，listener 跟随 swup 新内容，回原文 reload；`9f8ef54` |
 | — | Twilight 其余差距项（T4 看板娘/T1 Loading/T5-T8） | ⏸️ 按用户取舍 | T4 用户明确不要；T1 与提速目标冲突不建议；T5-T8（作品集/履历/仓库卡/音乐卡）待用户点名 |
 
 ---
