@@ -4,14 +4,11 @@
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
 > 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐功能最终形态 = B 站收藏夹悬浮播放器（方案 B：站内直接播放、可拖动、自动连播，后端新增 /api/bili-fav 代理）；修复了 SSR 响应流截断重大 bug（LiveRefreshBanner SSR 返回 null）；旧博客文章迁移补齐（8→11 篇）。** 真正待办只剩 1 项需用户输入：Umami 真实统计凭据（后台直接填）。见 7.5。
 >
-> 配套阅读（按顺序）：
-> 1. 本文（先读第 0、1、4、6、7 节）
-> 2. **`docs/站点功能与使用说明.md`（站长视角：地址/功能/内容去向/常见修改指南/待办优先级——用户问"怎么用/怎么改/内容去哪了"先甩这篇）**
-> 3. `docs/方案-v2.0-Shirone1比1复刻与SSE实时.md`（设计锁定 L1–L10 与工单路线图）
-> 3. `CONTEXT.md`（领域词汇）+ `docs/adr/`（架构决策）
-> 4. `web/docs/部署与二次开发指南.md`（前端视角的部署与坑）
-> 5. `docs/DEPLOY-NAS.md`（后端部署）、`docs/开发过程与踩坑-二次开发指南.md`（T0/T1 历史）
-> 6. 工作记忆：`.codebuddy/memory/2026-09-12.md`、`2026-09-13.md`（本次全部细节与踩坑原文）
+> ⚠️ **本文是深层档案，不再是阅读入口**。入口 = [`docs/README.md`](README.md)（索引+任务路由）；全面总结 = [`docs/项目全景与开发史.md`](项目全景与开发史.md)。
+> 原第 6 节坑大全 → [`docs/坑大全.md`](坑大全.md)；原第 8/9/10 节 → [`docs/命令与运维速查.md`](命令与运维速查.md)（编号不变，「坑 6.x」引用仍有效）。
+>
+> 本文按需查阅的小节：§0 铁律｜§1 架构｜§2 仓库｜§3 进度总览｜§4 各阶段实现细节（4.1–4.11）｜§5 关键实现细节｜§7 待办详情
+> 其余文档：`站点功能与使用说明.md`（用户视角）、`方案-v2.0-*.md`（设计锁定）、`CONTEXT.md` + `docs/adr/`（领域）、`web/docs/部署与二次开发指南.md`、`.codebuddy/memory/*.md`（每日原始记录）
 
 ---
 
@@ -526,86 +523,9 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 
 ---
 
-## 6. 踩坑大全（现象 → 原因 → 解法）
+## 6. 踩坑大全
 
-### 6.1 前端 / Astro
-
-1. **`astro dev` 当前不可用**：rolldown 依赖扫描对 `ImageWrapper.astro` 误报 + SSR deps 缓存反复损坏（清 `.vite` 无效）→ 用 `pnpm build && pnpm preview`（workerd 本地跑产物，端口同样 4321）替代。
-2. **Astro 7 没有 `output:"hybrid"`**（Astro 5 就移除了）→ `output:"static"` + adapter，实时页写 `export const prerender = false`。
-3. **Cloudflare adapter 的预渲染在 workerd 里跑**：原生模块（sharp 等）、运行时读 fs 都会炸；入口 chunk 的 `import.meta.url` 可能是 `undefined`（已在 `integration/ssr-node-shims.ts` 兜底）。
-4. **占位动态路由必须 `getStaticPaths(){return []}`**，否则构建报 `GetStaticPathsRequired`。
-5. **`[...page].astro` 是首页真身**（上游没有 `index.astro`），且 SSR 化后它**会吞掉所有未知路径** → 已加「仅数字分页放行」守卫（`Response(404)`）。
-6. **Astro island 会各自打包一份依赖**：产物里 `use-swr-*.js` 有**多份不同 chunk** → 模块级单例（EventSource / SWR cache）不可靠。实时层因此把连接挂 `window.__kiramekuRealtimeHub`、把重校验交给各 island 自己的 hook。
-7. **`client:load` 的 React island 会在预渲染期被 SSR**：组件里如果顶层访问浏览器 API 或抛错，构建直接失败（曾出现 `Unable to render RealtimeBridge!`）→ 要么写成 SSR 安全，要么用 `client:only="react"`。
-8. **路径末尾斜杠**：`/auth/callback` → 301 到 `/auth/callback/`，**query 会保留**（已实测），新页面注意别依赖无斜杠 URL。
-9. **Svelte 5 是 runes 模式**（`$state`/`$derived`），不是 `export let`；`variables.styl` 需要 stylus 支持。
-10. **pnpm 11 不再读 `package.json.pnpm.onlyBuiltDependencies`** → 必须在 `pnpm-workspace.yaml` 写 `allowBuilds`（esbuild/workerd/sharp…），否则二进制不装、构建失败。
-11. **路径别名**：`@config/`、`@data/` 不存在；配置用 `@/config/`，data 用相对路径（如 `../data/anime`）。`@components/`、`@utils/`、`@i18n/` 是正常别名。
-12. **Pagefind 在 Windows 上调用**：`execFileSync("pagefind")` 会报 `spawn pagefind ENOENT`；必须 `shell:true` + 完整路径 `node_modules/.bin/pagefind.cmd`。
-13. **字体子集是静态生成的**：`pnpm fonts:subset` 从当前 API 文章收集字符，新增含生僻字的文章可能缺字（tofu），需重新跑子集化。
-14. **【重大】React/Vue/Svelte island 在 SSR 期返回 `null`/`undefined` 会中断整个响应流**：Astro `renderFrameworkComponent` 抛 `Unable to render <组件名>!`，已 flush 的部分照常发出（HTTP 200），其余全部丢失——页面随机截断且状态码正常，极难察觉（LiveRefreshBanner 因此把首页/归档/文章详情截断了很多天没人发现）。**守则：island 组件 SSR 分支永远返回元素（如 `<div hidden />`），不许 `return null`；新增 SSR 页面 island 后必须验证响应完整性**（检查 footer 出现次数/结尾元素完整，不能用 `</html>` 判断——Astro 产物本来就不输出 `</html>`）。诊断用 `pnpm dlx wrangler@4 dev -c wrangler.deploy.json` 跑构建产物看完整堆栈（`astro preview` 吞错误只显示 200）。见 4.11.2。
-15. **本地 `astro preview` 的 SSR 渲染不可靠且吞错误**（截断、无日志）：需要确定性验证 SSR/侧栏渲染时，用**构建期预渲染 + mock 配置服务器**（`PUBLIC_API_BASE=http://127.0.0.1:9999 pnpm build` 指向只服务 `/api/site-config` 的 node mock，直接断言 `dist/client/**/*.html`），或 `wrangler dev` 跑产物看日志。见 4.11.1/4.11.2。
-16. **无头浏览器截图/测 DOM 的三个坑**：①页面带 SSE 长连接（LiveRefreshBanner 的 EventSource）后，`--virtual-time-budget` 永远等不到网络空闲会**无限挂起**——必须用 `--timeout=12000`（真实秒数上限）替代；②headless Edge 会走 Windows 系统代理，页面 JS 里的 fetch 可能被代理挂住（表现为 island 一直停在加载态）——加 `--no-proxy-server` 验证；③`--dump-dom` 配合 `--timeout` 可断言 island 是否水合（看 astro-island 内部有没有内容）。
-
-### 6.2 Cloudflare（Pages / Workers / DO / Token）
-
-1. **`fetch` 默认跟随 3xx** → BFF 代理必须 `redirect:"manual"`，否则后端 302（例：`/api/auth/github/login`）被吃掉，浏览器拿到 **200 + 别人的页面**（OAuth 流程直接断）。**读代理与写透传都要加。**
-2. **Worker 自定义域接口是 `PUT`**（`/accounts/{acc}/workers/domains`），POST 返回 405。
-3. **`wrangler deploy` 带 `custom_domain` 路由时，若 DNS 上仍有同名记录，会静默只上传脚本不绑域**（表现为"部署成功但域名还是旧站"）→ 必须先清 DNS/解绑 Pages。
-4. **免费计划 Durable Object 必须用 `new_sqlite_classes`**（KV 后端类要付费）；迁移 tag 一旦上线不可改，新增 class 要追加新的 `[[migrations]]`。
-5. **DO 里 `writer.write()` 不设超时会把整个实例写僵**：客户端"连上但不读"→ write 永不 resolve → 该 DO 后续请求排队 → BFF `/internal/revalidate` 跟着 hang（实测 40s 超时，后端 httpx 3s 直接失败）。解法：逐条 `Promise.race` 2s 超时 + 摘除死连接 + 广播 `waitUntil` 异步；另留 `ROOM_VERSION` 前缀当逃生舱（bump 即换新实例）。
-6. **`wrangler secret put` 走管道 stdin 会把结尾换行存进密钥**（本地 `.dev.vars` 与线上不一致 → HMAC 永远 401）→ 改用 CF API 写：`PUT /accounts/{acc}/workers/scripts/{name}/secrets`，body `{name,text,type:"secret_text"}`。
-7. **Account Token 的 `/user/tokens/verify` 返回 401 是正常的**（无 user 级权限），不影响 account 级操作。
-8. **Pages 环境变量字段名是 `env_vars`**（旧文档的 `environment_variables` 会静默写不进去但返回 success）。
-9. **"绑定 active + DNS 对 + purge 了仍是旧内容"** 时，先查 zone 的 **Worker route 抢占**（`GET /zones/{zone}/workers/routes`），优先级高于 Pages。
-10. **`cdn.jsdelivr.net` / `fastly.jsdelivr.net` 对 gh 资源会 301 到 raw** → 图床统一走 `gcore.jsdelivr.net`。
-11. **GitHub Actions ubuntu runner 上 `npx wrangler@4 deploy` 报 `sh: wrangler: not found`（exit 127）** → 必须用 `pnpm dlx wrangler@4 deploy`（npx 在 pnpm 项目里解析不到二进制）。
-
-### 6.3 NAS Docker / 部署
-
-1. **docker 不在 PATH**：`/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker`，且必须 `export DOCKER_HOST=unix:///var/run/docker.sock`。
-2. **环境变量在 `docker run -e` 里**（不是 `.env`）→ 改 env 必须**重建容器**（restart 不读新 env）。
-3. **Alembic 迁移必须在应用容器重启前跑**！否则新代码启动时 `SQLModel.metadata.create_all` 会先把新表建出来，迁移再 `create_table` 就报"表已存在"。
-4. **镜像可能落后于源码**（本项目真实发生：容器里连 `cache_invalidate.py` 都没有）→ 改后端**必须** SMB 同步 + `docker build` + 重建容器，别只 `restart`。
-5. 重建容器命令要点：先 `tag` 备份镜像（`kirameku-backend:bak-YYYYMMDD`），只 `stop/rm/run kirameku-backend`，**别碰 PG 与卷**；`admin/dist` 与 `kirameku_uploads` 的挂载参数别丢。
-6. **源码同步一律走 SMB**（`robocopy … /MIR /XD .venv __pycache__ uploads .git admin\node_modules /XF *.db .env *.log` 或针对 `app/`、`migrations/`、`admin/dist` 分步同步）；**禁止 `scp` / `ssh "cat >"`**（编码/权限会坏）。robocopy 退出码 **0–7 都算成功**。
-7. **大目录 robocopy 会被判"长时间无输出"而中断** → 分目录小步同步。
-8. 真要跑管理类命令又不想弹确认，可**把命令写成 `.sh` → `Copy-Item` 推到 `U:\kirameku\` → `ssh hewll 'tr -d "\r" < /share/.../x.sh | sh'`**，用完再写个自删除清理脚本同法跑掉（实战有效）。
-9. 一次性脚本执行容器内 python 的正确姿势：`docker run --rm -w /app -e PYTHONPATH=/app -v <host脚本>:/tmp/x.py -e DATABASE_URL=… <image> python /tmp/x.py`（少了 `-w /app` 或 `PYTHONPATH` 会 `ModuleNotFoundError: app`）。
-10. **cloudflared 必须加 `--protocol http2`**：NAS 网络限制 UDP/QUIC，默认 QUIC 协议注册连接后立即 "timeout: no recent network activity"（表现为 API 530/502，进程在跑但未连接边缘）。重启脚本见 `scripts/restart-tunnel.sh`（已复制到 `U:\kirameku\`）。
-11. **后端容器无 `.env` 文件**：env 全部通过 `docker run -e` 传入（DATABASE_URL / SECRET_KEY / CORS_ORIGINS / FRONTEND_ORIGIN / BFF_ORIGIN），重建容器时必须带完整 env。部署脚本见 `scripts/rebuild-backend.sh`。
-12. **PG 在默认 bridge 网络**：容器名 DNS 解析不工作，DATABASE_URL 必须用 IP `10.0.3.2:5432`（PG 重启后 IP 可能变，需重新确认）。
-13. **cloudflared 以 nohup 后台进程运行**（非 systemd 非 Docker），NAS 重启后需手动 `sh /share/CACHEDEV1_DATA/Container/kirameku/restart-tunnel.sh` 拉起。✅ **2026-09-13 已配置开机自启**：`/etc/config/autorun.sh` 调用 `start-tunnel.sh`（幂等+setsid+http2），见 4.9.6。
-14. **这台 QNAP 没有 `pgrep`**（只有 `pidof`，且 pidof 匹配全名不可靠）→ 检测进程是否存在必须用 `ps w | grep '[c]loudflared'`（`[c]` 技巧排除 grep 自身）。用 `pgrep -f` 会返回 127（command not found），脚本 `if pgrep ...` 会误判为"没运行"而重复拉起进程。
-15. **这台 QNAP 没有 `nohup`**（`/usr/bin/nohup` 和 `/bin/nohup` 都不存在）→ 后台常驻进程必须用 `setsid command & < /dev/null`（setsid 在 `/bin/setsid`，让进程在新会话运行，脱离 SSH 控制终端不被 SIGHUP 带走）。用 nohup 会报 `nohup: command not found` 且进程起不来。
-16. **`SQLModel.metadata.create_all` 与 Alembic 迁移冲突**：应用 lifespan 启动时 `init_db()` 会自动为所有已 import 的模型建表。新增模型后，如果先启动新容器再跑 `alembic upgrade head`，create_all 已把表建好，迁移的 `create_table` 会报 `DuplicateTable`。**解法二选一**：(a) 严格先跑迁移再启动新容器；(b) 接受 create_all 建表后核对结构一致，执行 `alembic stamp <revision>` 标记版本。本轮 login_log 表用的是 (b)。
-17. **admin 构建脚本跨平台不兼容**：`package.json` 的 `build` 是 `rimraf dist && NODE_OPTIONS=--max-old-space-size=8192 vite build && generate-version-file`，Unix 内联环境变量写法在 Windows PowerShell/cmd 下报 `'NODE_OPTIONS' is not recognized`。**Windows 上必须**：`$env:NODE_OPTIONS="--max-old-space-size=8192"; npx rimraf dist; npx vite build; npx generate-version-file` 分步执行。
-18. **admin/dist 用 robocopy /MIR 同步后容器内仍 404（bind mount inode 失效）**：后端容器以 `-v 宿主/admin/dist:/app/admin/dist:ro` 挂载，且 `main.py` 在**启动时**一次性判断 `admin_dist.exists()` 才 `app.mount("/admin", ...)`。若容器启动时宿主 dist 为空/不存在，之后再用 `robocopy /MIR` 同步（/MIR 会先清空再重建目录，**目录 inode 改变**），bind mount 仍绑定旧 inode，容器内 `ls /app/admin/dist` 是空的 → /admin 全 404，但宿主源目录文件齐全。**解法**：同步 dist 后 `docker restart kirameku-backend`（重新 bind + 重新走启动挂载判断，几秒中断，不碰 PG）。**最佳顺序**：先 robocopy 同步 dist，再（重）启动后端容器；或在部署脚本里把 restart 作为 admin 同步后的固定收尾步骤。验证：容器内 `ls /app/admin/dist/index.html` 存在 + 公网 `/admin/` 返回 200 text/html + `/admin/static/js/index-*.js` 返回 200。
-19. **B 站 API 风控矩阵（做收藏夹/视频相关功能必读）**：①浏览器直连 `api.bilibili.com` 带 Origin 头 → **403**（CORS 不可用；JSONP 的 callback 参数也已下线，同样 403）；②Cloudflare Worker 出口 IP → **412**（数据中心 IP 风控，BFF 代理方案直接死）；③`x/v3/fav/resource/list` 的 **ps 上限是 20**，传 50 返回 `code -400 请求错误`；④python httpx 从 NAS 容器内带 UA 请求正常（家宽 IP 不被拦）。**唯一可行架构：NAS FastAPI 代拉（ps≤20 自动翻页聚合）+ 边缘缓存压请求频率**，见 `app/api/bili_fav.py`。
-
-### 6.4 工具链 / PowerShell / 命令
-
-1. `Get-Content` 不加 `-Encoding UTF8` 会被工具安全策略拦截；读密钥/配置用 read_file 或显式 `-Encoding UTF8`。
-2. **PowerShell 变量名大小写不敏感**：`$b`（路径）与 `$B`（URL）会互相覆盖（曾导致 `Join-Path` 报 "Cannot find drive 'https'"）→ 命名语义化（`$base`/`$cdn`）。
-3. 命令里出现 `%XX`（URL 编码）或复杂引号时，工具可能**误判为 cmd.exe** 而报 `'$var' 不是内部或外部命令` → 改用中文字面量 URL / 纯 PowerShell。
-4. **`remove-item`、`docker rm`、`docker stop` 这类"破坏性"命令会走审批弹窗**；用户不在时会 `Execution Cancelled: Permission request timed out`（是超时不是拒绝）。`delete_file` 工具不受影响，可用来清临时文件。
-5. **没有输出/长耗时的命令会被判 idle/watch 而取消或转后台**：
-   - `robocopy` 大目录 → 分步
-   - `curl` 监听 SSE → 改短超时或落盘
-   - **`pnpm exec vite build`（admin）会被误判成 watch 命令**（返回 "Watch command started"、看不到输出）但**实际会跑完** → 用 `dist/index.html` 时间戳确认。
-6. `pnpm` 会自动按 `package.json` 变更装依赖（改版本后不必手动 install，但会慢一点）。
-7. 前端构建偶发 miniflare `fetch failed / bad port` → 设 `NO_PROXY=127.0.0.1,localhost` 重试。
-8. **Edge headless 多实例并发截图冲突**：在一个循环里连续调用 `msedge --headless --screenshot` 截多个宽度，后两个实例会复用第一个的 user-data-dir 导致截图空白（文件仅 2-3KB）。**解法**：每次截图加 `--user-data-dir="$env:TEMP\edge_shot_<width>"` 独立 profile，或串行执行并加 `--virtual-time-budget=8000` 给足渲染时间。截图前先用 `Invoke-WebRequest` 预热一次页面。
-9. **SSH 远程命令含括号/复杂引号会语法错误**：`ssh hewll-admin 'echo === foo (bar) ==='` 中的括号会被远程 sh 解析报错。**解法**：把命令写成 `.sh` 文件 → `Copy-Item` 到 `U:\kirameku\` → `ssh hewll-admin "sed -i 's/\r$//' /share/.../x.sh && sh /share/.../x.sh"`（sed 去 CRLF 防 `^M` 报错）。这是本项目 NAS 运维的标准模式。
-10. **PowerShell `Get-Content` 读后端 .py 中文显示乱码**：控制台 GBK 编码问题，文件本身是 UTF-8 无损。读文件用 `Get-Content -Encoding UTF8`，或直接用 Read 工具（按 UTF-8 解析）。**不要**用 PowerShell 写中文到 .py/.sh（会编码损坏），一律用 Write/Edit 工具。
-11. **导航栏中等宽度竖排拥挤**：`TopAppBar` 用 `contentAlign:center` 时 nav 绝对定位居中（`lg:absolute lg:left-1/2`），9 项导航在 1024–1279px 被左侧站名+右侧图标挤压，两字词被压成竖排。**解法**：横排断点提高到 `xl`(1280)，nav-link 加 `shrink-0 whitespace-nowrap`，<1280 走汉堡抽屉。见 4.9.1。
-
-### 6.5 Git / 多仓
-
-1. `web/` 是独立子仓，外仓看不到其改动（`.gitignore` 忽略）→ 各自的 `git add/commit/push`。
-2. 外仓分支是 **master**（不是 main）；`git push origin main` 会报 `src refspec main does not match any`。
-3. `_upstream_shirone/` 不入库，改上游要走 `node scripts/sync-upstream.mjs main` 评估后改 `PINNED_COMMIT`。
-4. Push 前 `git status` 确认没有 `.env`/token 被 staged。
+> **已抽离为独立文件 [`docs/坑大全.md`](坑大全.md)**（编号 6.1–6.5 不变，历史「坑 6.x」引用仍有效）。改代码前先按场景读对应分区。
 
 ---
 
@@ -769,148 +689,9 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 
 ---
 
-## 8. 命令速查
+## 8. 命令速查 / 9. 凭据与环境变量 / 10. 关键 ID 速查
 
-### 8.1 前端（web/）
-
-```powershell
-cd F:\AI\projects\Kirameku2.0\web
-pnpm install
-$env:NO_PROXY="127.0.0.1,localhost"
-pnpm build                                   # 产物 dist/client + dist/server；postbuild 自动生成 pagefind 索引
-pnpm preview --port 4321 --force             # 本地验证（dev 不可用，见 6.1.1）
-
-# 部署：push 到 main 后 CI 自动部署（GitHub Actions → wrangler deploy）
-# 手动部署（紧急时）：
-$env:CLOUDFLARE_API_TOKEN=(Get-Content ..\worker-bff\.cf.local.env -Encoding UTF8 | ConvertFrom-StringData).CLOUDFLARE_API_TOKEN
-$env:CLOUDFLARE_ACCOUNT_ID='d4add8ad549536a77a5b9fcf6d5be733'
-pnpm dlx wrangler@4 deploy -c wrangler.deploy.json
-
-# 字体重新子集化（新增含生僻字文章后）
-pnpm fonts:subset
-```
-
-### 8.2 BFF（worker-bff/）
-
-```powershell
-cd F:\AI\projects\Kirameku2.0\worker-bff
-pnpm exec tsc --noEmit
-.\scripts\Deploy.ps1            # = npx wrangler@latest deploy（自动加载 .cf.local.env）
-pnpm exec wrangler dev          # 本地
-```
-
-### 8.3 后端（Kirameku-backend/ → NAS）
-
-```powershell
-# 1) 同步源码（SMB；分目录小步，避免大目录 robocopy 被中断）
-robocopy "F:\AI\projects\Kirameku2.0\Kirameku-backend\app" "U:\kirameku\backend\app" /MIR /XD __pycache__ .pytest_cache /NFL /NDL /NJH /NP /R:1 /W:1
-robocopy "F:\AI\projects\Kirameku2.0\Kirameku-backend\migrations" "U:\kirameku\backend\migrations" /MIR /XD __pycache__ /NFL /NDL /NJH /NP /R:1 /W:1
-robocopy "F:\AI\projects\Kirameku2.0\Kirameku-backend" "U:\kirameku\backend" requirements.txt Dockerfile alembic.ini /R:1 /W:1
-
-# 2) 构建镜像
-ssh hewll 'export DOCKER_HOST=unix:///var/run/docker.sock; cd /share/CACHEDEV1_DATA/Container/kirameku/backend && /share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker build --progress=plain -t kirameku-backend:latest . 2>&1 | tail -c 800'
-
-# 3) 【有模型变更时】先跑迁移，再重启应用容器
-ssh hewll 'export DOCKER_HOST=unix:///var/run/docker.sock; D=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker; $D run --rm -w /app -e PYTHONPATH=/app -e DATABASE_URL=<同容器> -e SECRET_KEY=<同容器> kirameku-backend:latest alembic upgrade head'
-
-# 4) 重建应用容器（只动 kirameku-backend；env 必须完整，见第 9 节）
-#    推荐：写 .sh → Copy-Item 到 U:\kirameku\ → ssh 'tr -d "\r" < /share/.../x.sh | sh'
-#    脚本内：tag 备份 → stop → rm → run -d --name kirameku-backend --restart unless-stopped -p 8100:8000 -e ... -v kirameku_uploads:/app/uploads -v /share/.../admin/dist:/app/admin/dist:ro kirameku-backend:latest
-
-# 5) 后台界面（admin）改动用 SMB 同步（bind mount）
-#    ⚠️ Windows 上 package.json 的 build 脚本（NODE_OPTIONS=... 内联写法）不兼容，必须分步：
-cd admin
-$env:NODE_OPTIONS="--max-old-space-size=8192"
-npx rimraf dist
-npx vite build
-npx generate-version-file
-robocopy "F:\AI\projects\Kirameku2.0\Kirameku-backend\admin\dist" "U:\kirameku\backend\admin\dist" /MIR
-#    ⚠️ /MIR 会重建目录导致 bind mount inode 失效（见坑 6.3.18），同步后必须 restart 后端容器：
-ssh hewll-admin "export DOCKER_HOST=unix:///var/run/docker.sock; /share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker restart kirameku-backend"
-#    验证：curl https://kirameku-api.neutronstar.fun/admin/ 应 200 text/html
-
-# 6) 【有模型变更时】迁移与 create_all 冲突注意：
-#    应用 lifespan 会自动 create_all 建表。若新容器已启动再跑 alembic upgrade head 会报 DuplicateTable。
-#    解法：核对表结构后 `docker exec kirameku-backend alembic stamp <revision>` 标记版本。
-#    或严格先跑迁移再启动新容器。详见 6.3.16。
-```
-
-### 8.4 本地测试
-
-```powershell
-cd F:\AI\projects\Kirameku2.0\Kirameku-backend
-$env:DATABASE_URL="sqlite:///./_t.db"; $env:SECRET_KEY="test"   # 测试自带 sqlite
-.\.venv\Scripts\python.exe -m pytest -q        # 期望 19 passed
-```
-
-### 8.5 验证清单（每次改动后跑一遍）
-
-```powershell
-$cb = Get-Random
-# 站点（全部应 200）
-foreach ($p in @('/','/2/','/archive/','/moments/','/albums/','/friends/','/messages/','/about/','/novel/','/posts/革命','/sitemap-index.xml','/robots.txt','/auth/callback')) { ... }
-# 服务
-https://bff.neutronstar.fun/health                                   # {"status":"ok"}
-https://bff.neutronstar.fun/bff/archive?size=2                       # 200
-https://kirameku-api.neutronstar.fun/api/health                      # {"status":"ok"}
-https://kirameku-api.neutronstar.fun/admin/                          # 200
-https://www.neutronstar.fun/                                         # 301
-# 实时链路（写操作 + 缓存）
-GET  /api/chatters?...（两次，第二次 X-Cache: HIT）
-POST /api/chatters/1/like  → 再 GET 同 URL 应 X-Cache: MISS
-# 鉴权
-POST /api/likes/toggle（无 token）→ 401
-GET  /api/comments/admin（无 token）→ 403
-GET  /api/auth/github/login → 307 + Location 指向 github.com
-```
-> 注意：查线上版本**必须带 `?cb=<随机>` 破缓存**，否则可能读到边缘陈旧 HTML（曾有首页 P1 旧缓存在线 7 天）。
-
----
-
-## 9. 凭据与环境变量
-
-### 9.1 已就绪（无需再要）
-
-| 凭据 | 位置 |
-|:--|:--|
-| NAS SSH 免密 | `~/.ssh/config` Host `hewll`（Mars@192.168.5.4）/ `hewll-admin` |
-| SMB 映射 | `U:` → `/share/CACHEDEV1_DATA/Container`（`U:\kirameku\backend` 即后端目录）；`Z:` → `/share/CACHEDEV1_DATA/Web` |
-| NAS Docker | `/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker` + `DOCKER_HOST=unix:///var/run/docker.sock` |
-| 后端 `DATABASE_URL`/`SECRET_KEY` | NAS 容器 `-e`（值见容器 inspect 或 `backups/rescue-from-duplicates/`，gitignored） |
-| `REVALIDATE_SECRET` | `worker-bff/.dev.vars`（本地）+ Worker secret（线上，**已轮换一致**）+ NAS 容器 env |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | NAS 容器 `-e`（OAuth App 回调 `https://bff.neutronstar.fun/api/auth/github/callback`） |
-| Cloudflare API Token | `worker-bff/.cf.local.env`（gitignored；需 Workers 脚本/KV/DO/Workers 路由/Zone DNS Edit/Pages） |
-| CF Account ID | `d4add8ad549536a77a5b9fcf6d5be733` |
-| KV `CACHE_TAGS` | `4959a742fe4d44dbbc0ba8c200bea694` |
-| 后台管理员 | 用户名 `admin`；初始密码 `admin123`（见 `.codebuddy/memory/2026-09-09.md`；若已被修改且忘记，跑 `Kirameku-backend/scripts/ops/reset_admin.py` 重置） |
-| Git 推送凭据 | 系统 credential manager（GitHub 账号 `wenzongze`） |
-
-### 9.2 待用户提供（不阻塞当前开发）
-
-- **Umami website ID / scriptUrl / shareUrl**（统计，可选）：现在可在后台「站点配置」页直接填写（key=`umami`），无需改代码。填入后前台约 60 秒生效（BFF 缓存），后台 Umami 对话框有"打开统计面板"入口。
-- Giscus 仓库配置（若改用 Giscus 评论，可选；当前用自建评论）
-- 阿里云 OSS AK（当前图片走 NAS 本地 + fastimage，不需要）
-- **B 站收藏夹 media_id**（音乐挂件改造需要，见 7.5②）
-
-### 9.3 绝不入库
-
-`.env`、`.env.local`、`.dev.vars`、`.cf.local.env`、`backups/`、`_upstream_shirone/`、`web/`（子仓）、`admin/dist`、`.codebuddy/`、`1/`（临时暂存目录，用户的清理约定）。
-
----
-
-## 10. 关键 ID / 路径速查
-
-- CF Account：`d4add8ad549536a77a5b9fcf6d5be733`；zone `neutronstar.fun`：`0ab03cd4f0c21a06462f1f5325abeeeb`
-- KV `CACHE_TAGS`：`4959a742fe4d44dbbc0ba8c200bea694`
-- Workers：`neutronstar-web`（正式站）、`kirameku-bff`（BFF+DO）、`sync-hub-api`（其他项目）、`neutronstar`（旧，未用）
-- Pages：`neutronstar-web`（仅 pages.dev 预览，**已不服务正式域**）；旧项目 `neutronstar`（已弃用，可删）
-- NAS：`192.168.5.4`；源码 `/share/CACHEDEV1_DATA/Container/kirameku/backend`；镜像备份 tag `bak-20260909 / bak-20260912 / bak-20260912b / bak-20260912c / bak-20260913`
-- 容器：`kirameku-backend`（:8100→8000）、`kirameku-pg`（:15432→5432）；卷 `kirameku_uploads`、`kirameku_pgdata`
-- 域名：`neutronstar.fun`（Worker）、`bff.neutronstar.fun`（BFF Worker）、`kirameku-api.neutronstar.fun`（Tunnel→NAS）
-- 上游 pinned：`b79d301e5e6a8ec897e85b042de43187b571dd5b`
-- **当前版本（2026-09-13 第三轮续作后）**：web 子仓 main = `2396e47`（悬浮播放器 cd1a93a+2396e47、音乐外链卡 cdb840b、SSR 截断修复 2f77b19，CI 全 success）；外仓 master = 本文档提交。查 CI：`cd web; gh run list --limit 1`；查某步日志：`gh run view <id> --log | Select-String "subset"`。
-- 图床：`https://gcore.jsdelivr.net/gh/neutron-star77/fastimage@main/2026/08/`（派生 `thumbs/`、`full/`）
-- 本机工具：Everything CLI `E:\Program Files (x86)\图拉丁工具箱\图吧工具箱202507\tools\其他工具\Everything\es.exe`；双端推送脚本 `F:\AI\git-templates\sync_and_publish.ps1`
+> **已抽离为独立文件 [`docs/命令与运维速查.md`](命令与运维速查.md)**（编号 8.x/9.x/10.x 不变）。部署、排障、查凭据去那里。
 
 ---
 
