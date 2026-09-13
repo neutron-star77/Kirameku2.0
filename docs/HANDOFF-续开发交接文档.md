@@ -140,7 +140,7 @@ cd ..\Kirameku-backend
 | ⑦ | 显示面板瘦身：配色风格/规范/纹理/布局移后台 | ✅ 已上线 | displaySettings 四开关关 + site_config 新键 display(JSON: hue/layoutMode/texturePreset/textureOpacity) → site-overrides → ConfigCarrier/PostPage；面板只留 页面背景/模糊/动效；commit `f5fdce2` |
 | ⑧ | Twilight 式 hover 交互 | ✅ 已上线 | 桌面悬停顶栏设置图标立即展开面板(离开 260ms 收回)、搜索胶囊悬停展开移出收回、明暗菜单同款；hover 绑定必须在 client:only 组件内(面板水合后才存在)；`f5fdce2` |
 | ⑨ | 全屏沉浸背景模糊滑条(0-20px) + 卡片毛玻璃悬浮 | ✅ 已上线 | localStorage 记忆+early-apply 防闪；壁纸 media 层 blur(--wallpaper-blur)+scale(1.12) 补偿；card-base/m3-card/postcard/float-panel 55%+blur(18px) **is:inline 输出**(lightningcss 把标准 backdrop-filter 改写为 -webkit-,Chrome 146 移除别名→失效,新坑 6.1.22)；线上截图验收；`4a25a0f` |
-| ⑩ | 悬浮播放器重写（APlayer 风格，对齐用户截图） | ✅ 已上线 | 去 iframe 改 <audio>；主源=GitHub bilimusic 仓 audio/{bvid}.mp3（gcore.jsdelivr），回退=/api/bili-audio（spi-buvid 流转发，风控窗口期 502 跳曲）；最小化=封面悬浮球可拖可点，刷新/关闭重置固定右下角（不再记位置/宽度）；ended 天然连播；web `9f9828b`、后端 bili_audio.py+router（spi 版已部署）；用户上传音频见使用说明 §2.1 |
+| ⑩ | 悬浮播放器重写（APlayer 风格，对齐用户截图） | ✅ 已上线 | 去 iframe 改 <audio>；主源=GitHub bilimusic 仓 audio/{bvid}.mp3（gcore.jsdelivr），（B 站代理回退已移除——风控不可靠 6.3.20，bilimusic 主源唯一，缺曲跳过）；最小化=封面悬浮球可拖可点，刷新/关闭重置固定右下角（不再记位置/宽度）；ended 天然连播；web `9f9828b`、后端 bili_audio.py+router（spi 版已部署）；用户上传音频见使用说明 §2.1 |
 | — | Twilight 其余差距项（T4 看板娘/T1 Loading/T5-T8） | ⏸️ 按用户取舍 | T4 用户明确不要；T1 与提速目标冲突不建议；T5-T8（作品集/履历/仓库卡/音乐卡）待用户点名 |
 
 ---
