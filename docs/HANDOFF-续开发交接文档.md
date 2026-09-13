@@ -462,6 +462,8 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - **前端 island** `web/src/components/islands/BiliFloatPlayer.tsx`（React，**client:only**）：挂在 Layout body（Swup 容器外）→ 全站唯一实例、切页不断播。浏览器现场拉 `/api/site-config/music_widget`（enabled+url 解析 fid）和 `/api/bili-fav`，后台改配置 ≤60s 全站生效，且规避 island SSR null 坑。交互：点封面/播放键直接播（B 站 iframe，自带播放/暂停/进度/音量）、上一首/下一首、播放列表抽屉（封面+时长）、连播=postMessage "ended" + 时长+3s 兜底双机制（去抖 2.5s）、**头部可拖动**（pointer capture，位置存 localStorage）、最小化成小球（iframe 不卸载不断播）、关闭存 sessionStorage。`music_widget.url` 含 fid 时播放器接管，侧栏外链卡片退为无 fid 时的兜底（site-overrides 的 MusicWidgetOverride 新增 fid 解析）。
 - **验收**：本地 wrangler dev + dump-dom 证实完整渲染（「♪ 收藏音乐 / 曲目 / 1 / 26 / ☰ 列表」）；线上首页 island 占位+chunk 200、CORS 契约（Origin→ACAO）实测通过、页面完整无回归。
 
+**首版四项修复（`8aad179`+`2bca990`，2026-09-13）**：①最小化/关闭点击无反应——头部 onPointerDown 的 setPointerCapture 把 click 重定向到捕获元素，按下时放过 button/a（根因）；②播放列表封面全 403——B 站图片 CDN 防盗链（带本站 Referer 403/无 Referer 200），所有 img 加 referrerPolicy="no-referrer"；③窗口大小自定义——右下角缩放手柄 240–520px + localStorage 记忆；④取数加 8s/12s 超时兜底 + 错误态提供外链兜底（防任何网络怪异导致永远卡加载态）。进度条拖动提示：跨域 iframe 手势拖出边界即断，默认宽度 288→320 并可调大。
+
 **已知限制**：跨域 iframe 拿不到真实暂停/进度——用户在 iframe 里手动暂停后，时长兜底定时器到点仍会切下一首；B 站接口风控若将来连 NAS IP 也拦，需要加 cookie 或换用 wbi 签名（现在没这问题）。
 
 #### 4.11.5 遗留观察：后端 2 个测试在干净库上失败（既有问题）
