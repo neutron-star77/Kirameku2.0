@@ -24,6 +24,7 @@ scripts/           NAS 运维脚本（rebuild-backend / start-tunnel 等）
 
 - 数据一律经 HTTP API 获取，前端不内置写死内容数据（例外：追番页 `web/src/data/anime.ts` 静态数据）。
 - 复刻外部主题时只参考公开演示的视觉/交互，代码自研。
+- **新功能组件先查开源轮子**（npm/GitHub 有无成熟实现），给出「自研/借用/借鉴」对比结论并写进对应 issue 后再动手（先例：悬浮播放器对比 vue3-music-player——island 栈为 React 19 + Svelte 5 不引 Vue 组件，功能无缺失，保留自研）。
 - 后端改造集中在 Alembic 迁移、权限加固、缓存失效 webhook。
 - **三条铁律**：① 不碰 NAS 的 `kirameku-pg` 容器与数据卷；② 不 `git add -A`（显式路径）；③ 密钥/`.env` 绝不入库。
 - 改完必须验证：前端 build+preview（dev 不可用）；SSR 页面验证响应完整性（footer 次数，不能用 `</html>` 判断）。
