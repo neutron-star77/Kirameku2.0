@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-13（第三轮续作后）**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐挂件方案 A 已实现并用用户提供的收藏夹链接（fid=3631802308）启用上线；修复了 SSR 响应流截断重大 bug（LiveRefreshBanner SSR 返回 null，首页/归档/文章页被随机截断——用户看到的"首页没文章列表"即此）；旧博客文章迁移补齐（8→11 篇，三代博客全部正式文章已在站）。** 真正待办只剩 1 项需用户输入：Umami 真实统计凭据（后台直接填）。见 7.5。
+> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐功能最终形态 = B 站收藏夹悬浮播放器（方案 B：站内直接播放、可拖动、自动连播，后端新增 /api/bili-fav 代理）；修复了 SSR 响应流截断重大 bug（LiveRefreshBanner SSR 返回 null）；旧博客文章迁移补齐（8→11 篇）。** 真正待办只剩 1 项需用户输入：Umami 真实统计凭据（后台直接填）。见 7.5。
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -452,7 +452,23 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - **渲染验证**：洛神赋/难经详情页完整（143KB/185KB，footer 在，`<style>` 自定义样式块透传正常——新站 markdown 管线允许原生 HTML，与《44》的 `<details>` 一致）。
 - **搜素/字体注意**：pagefind 索引与字体子集只在 CI 构建时重建，当前 3 篇新文章要等下次 web push 部署才会进搜索索引与字体子集。
 
-#### 4.11.4 全站回归（第三轮，结论：零回归）
+#### 4.11.4 音乐悬浮播放器（方案 B 落地，2026-09-13）
+
+用户升级需求："音乐卡片要做成直接点击就可以播放……最好做成可以在页面随时移动的悬浮卡片"。已实现并上线（web `cd1a93a`+`2396e47`，CI 34754977579/34755779988 success；后端新增 `/api/bili-fav` 代理）。
+
+**架构**：
+- **BFF 尝试被否**：先在 BFF 加了代理，实测 B 站对 Cloudflare Worker 出口 IP 返回 **412 风控**——B 站代理只能放 NAS 后端（国内家宽 IP）。BFF 版代码已撤。
+- **后端代理** `Kirameku-backend/app/api/bili_fav.py`：`GET /api/bili-fav?media_id=<fid>`，httpx 带 UA+referer 代拉收藏夹列表，**服务端按 ps=20 自动翻页聚合（最多 5 页=100 首）**，响应带 `Cache-Control: s-maxage=600`（BFF 边缘缓存 10 分钟，对 B 站真实请求每 colo 每批 ≤1 次）。失效视频（无 bvid）自动过滤。
+- **前端 island** `web/src/components/islands/BiliFloatPlayer.tsx`（React，**client:only**）：挂在 Layout body（Swup 容器外）→ 全站唯一实例、切页不断播。浏览器现场拉 `/api/site-config/music_widget`（enabled+url 解析 fid）和 `/api/bili-fav`，后台改配置 ≤60s 全站生效，且规避 island SSR null 坑。交互：点封面/播放键直接播（B 站 iframe，自带播放/暂停/进度/音量）、上一首/下一首、播放列表抽屉（封面+时长）、连播=postMessage "ended" + 时长+3s 兜底双机制（去抖 2.5s）、**头部可拖动**（pointer capture，位置存 localStorage）、最小化成小球（iframe 不卸载不断播）、关闭存 sessionStorage。`music_widget.url` 含 fid 时播放器接管，侧栏外链卡片退为无 fid 时的兜底（site-overrides 的 MusicWidgetOverride 新增 fid 解析）。
+- **验收**：本地 wrangler dev + dump-dom 证实完整渲染（「♪ 收藏音乐 / 曲目 / 1 / 26 / ☰ 列表」）；线上首页 island 占位+chunk 200、CORS 契约（Origin→ACAO）实测通过、页面完整无回归。
+
+**已知限制**：跨域 iframe 拿不到真实暂停/进度——用户在 iframe 里手动暂停后，时长兜底定时器到点仍会切下一首；B 站接口风控若将来连 NAS IP 也拦，需要加 cookie 或换用 wbi 签名（现在没这问题）。
+
+#### 4.11.5 遗留观察：后端 2 个测试在干净库上失败（既有问题）
+
+`pytest` 报 2 failed（test_likes_and_comments 的 github_user UNIQUE 约束冲突），**git stash 基线同样失败**，与第三轮改动无关。疑与 4.9.3 登录日志改动后测试种子的 github_user 复用有关。待办（P2）：修测试种子，恢复"19 passed"基线。
+
+#### 4.11.6 全站回归（第三轮，结论：零回归）
 
 - 13 个路由全 200（/ /2/ /archive/ /moments/ /albums/ /friends/ /messages/ /about/ /novel/ /anime/ /sitemap-index.xml /robots.txt /auth/callback/）。
 - BFF/后端 health ok；admin 200；www 301；BFF 缓存 `X-Cache: MISS`（失效联动正常）。
@@ -527,6 +543,7 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 13. **字体子集是静态生成的**：`pnpm fonts:subset` 从当前 API 文章收集字符，新增含生僻字的文章可能缺字（tofu），需重新跑子集化。
 14. **【重大】React/Vue/Svelte island 在 SSR 期返回 `null`/`undefined` 会中断整个响应流**：Astro `renderFrameworkComponent` 抛 `Unable to render <组件名>!`，已 flush 的部分照常发出（HTTP 200），其余全部丢失——页面随机截断且状态码正常，极难察觉（LiveRefreshBanner 因此把首页/归档/文章详情截断了很多天没人发现）。**守则：island 组件 SSR 分支永远返回元素（如 `<div hidden />`），不许 `return null`；新增 SSR 页面 island 后必须验证响应完整性**（检查 footer 出现次数/结尾元素完整，不能用 `</html>` 判断——Astro 产物本来就不输出 `</html>`）。诊断用 `pnpm dlx wrangler@4 dev -c wrangler.deploy.json` 跑构建产物看完整堆栈（`astro preview` 吞错误只显示 200）。见 4.11.2。
 15. **本地 `astro preview` 的 SSR 渲染不可靠且吞错误**（截断、无日志）：需要确定性验证 SSR/侧栏渲染时，用**构建期预渲染 + mock 配置服务器**（`PUBLIC_API_BASE=http://127.0.0.1:9999 pnpm build` 指向只服务 `/api/site-config` 的 node mock，直接断言 `dist/client/**/*.html`），或 `wrangler dev` 跑产物看日志。见 4.11.1/4.11.2。
+16. **无头浏览器截图/测 DOM 的三个坑**：①页面带 SSE 长连接（LiveRefreshBanner 的 EventSource）后，`--virtual-time-budget` 永远等不到网络空闲会**无限挂起**——必须用 `--timeout=12000`（真实秒数上限）替代；②headless Edge 会走 Windows 系统代理，页面 JS 里的 fetch 可能被代理挂住（表现为 island 一直停在加载态）——加 `--no-proxy-server` 验证；③`--dump-dom` 配合 `--timeout` 可断言 island 是否水合（看 astro-island 内部有没有内容）。
 
 ### 6.2 Cloudflare（Pages / Workers / DO / Token）
 
@@ -562,6 +579,7 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 16. **`SQLModel.metadata.create_all` 与 Alembic 迁移冲突**：应用 lifespan 启动时 `init_db()` 会自动为所有已 import 的模型建表。新增模型后，如果先启动新容器再跑 `alembic upgrade head`，create_all 已把表建好，迁移的 `create_table` 会报 `DuplicateTable`。**解法二选一**：(a) 严格先跑迁移再启动新容器；(b) 接受 create_all 建表后核对结构一致，执行 `alembic stamp <revision>` 标记版本。本轮 login_log 表用的是 (b)。
 17. **admin 构建脚本跨平台不兼容**：`package.json` 的 `build` 是 `rimraf dist && NODE_OPTIONS=--max-old-space-size=8192 vite build && generate-version-file`，Unix 内联环境变量写法在 Windows PowerShell/cmd 下报 `'NODE_OPTIONS' is not recognized`。**Windows 上必须**：`$env:NODE_OPTIONS="--max-old-space-size=8192"; npx rimraf dist; npx vite build; npx generate-version-file` 分步执行。
 18. **admin/dist 用 robocopy /MIR 同步后容器内仍 404（bind mount inode 失效）**：后端容器以 `-v 宿主/admin/dist:/app/admin/dist:ro` 挂载，且 `main.py` 在**启动时**一次性判断 `admin_dist.exists()` 才 `app.mount("/admin", ...)`。若容器启动时宿主 dist 为空/不存在，之后再用 `robocopy /MIR` 同步（/MIR 会先清空再重建目录，**目录 inode 改变**），bind mount 仍绑定旧 inode，容器内 `ls /app/admin/dist` 是空的 → /admin 全 404，但宿主源目录文件齐全。**解法**：同步 dist 后 `docker restart kirameku-backend`（重新 bind + 重新走启动挂载判断，几秒中断，不碰 PG）。**最佳顺序**：先 robocopy 同步 dist，再（重）启动后端容器；或在部署脚本里把 restart 作为 admin 同步后的固定收尾步骤。验证：容器内 `ls /app/admin/dist/index.html` 存在 + 公网 `/admin/` 返回 200 text/html + `/admin/static/js/index-*.js` 返回 200。
+20. **B 站 API 风控矩阵（做收藏夹/视频相关功能必读）**：①浏览器直连 `api.bilibili.com` 带 Origin 头 → **403**（CORS 不可用；JSONP 的 callback 参数也已下线，同样 403）；②Cloudflare Worker 出口 IP → **412**（数据中心 IP 风控，BFF 代理方案直接死）；③`x/v3/fav/resource/list` 的 **ps 上限是 20**，传 50 返回 `code -400 请求错误`；④python httpx 从 NAS 容器内带 UA 请求正常（家宽 IP 不被拦）。**唯一可行架构：NAS FastAPI 代拉（ps≤20 自动翻页聚合）+ 边缘缓存压请求频率**，见 `app/api/bili_fav.py`。
 
 ### 6.4 工具链 / PowerShell / 命令
 
@@ -649,7 +667,7 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 
 ### 7.5 第二轮需求剩余项与下一步行动（2026-09-13 交接点）
 
-> **当前状态（2026-09-13 第三轮续作后）**：本轮 8 项需求中 6 项已完成并**全部上线、线上验收、全站零回归**（详见 4.9 + 4.10）。第三轮续作（4.11）：**②音乐挂件已全部完成**（MusicLinkCard 外链卡片上线；用户提供收藏夹链接 `https://space.bilibili.com/90898408/favlist?fid=3631802308&ftype=create` 后已启用，线上验证 href/文案/rel 全对）；**发现并修复了 SSR 页面响应流随机截断的重大 bug**（LiveRefreshBanner SSR 返回 null，首页/归档/文章页缺文章列表的元凶，`2f77b19` 已上线三连验证，见 4.11.2）；**旧文章迁移补齐 8→11 篇**（见 4.11.3）。web 子仓 main = `2f77b19`（两次 CI success：34715783783、34716510215）。**真正待办只剩需要用户输入的 1 项**：⑧Umami 的 websiteId/scriptUrl/shareUrl（后台直接填，无需改代码）。③JWT cookie、④TTFB 用户暂缓；⑦文章加密用户明确不做。
+> **当前状态（2026-09-13 第三轮续作后）**：本轮 8 项需求中 6 项已完成并**全部上线、线上验收、全站零回归**（详见 4.9 + 4.10）。第三轮续作（4.11）：**②音乐功能最终形态 = B 站收藏夹悬浮播放器**（方案 B：站内直接播放/可拖动/自动连播/播放列表，BiliFloatPlayer island + 后端 /api/bili-fav 代理，web cd1a93a+2396e47 CI success；侧栏外链卡片退为无 fid 兜底，见 4.11.4）；**发现并修复了 SSR 页面响应流随机截断的重大 bug**（LiveRefreshBanner SSR 返回 null，首页/归档/文章页缺文章列表的元凶，`2f77b19` 已上线三连验证，见 4.11.2）；**旧文章迁移补齐 8→11 篇**（见 4.11.3）。web 子仓 main = `2396e47`（4 次 CI success）。**真正待办只剩需要用户输入的 1 项**：⑧Umami 的 websiteId/scriptUrl/shareUrl（后台直接填，无需改代码）。③JWT cookie、④TTFB 用户暂缓；⑦文章加密用户明确不做。
 
 #### ① 前端 web 仓：commit → push → CI 部署 → 线上验收 —— ✅ 已完成（2026-09-13）
 
@@ -888,7 +906,7 @@ GET  /api/auth/github/login → 307 + Location 指向 github.com
 - 容器：`kirameku-backend`（:8100→8000）、`kirameku-pg`（:15432→5432）；卷 `kirameku_uploads`、`kirameku_pgdata`
 - 域名：`neutronstar.fun`（Worker）、`bff.neutronstar.fun`（BFF Worker）、`kirameku-api.neutronstar.fun`（Tunnel→NAS）
 - 上游 pinned：`b79d301e5e6a8ec897e85b042de43187b571dd5b`
-- **当前版本（2026-09-13 第三轮续作后）**：web 子仓 main = `2f77b19`（音乐挂件 `cdb840b` + SSR 截断修复 `2f77b19`；CI run 34715783783 / 34716510215 均 success）；外仓 master = 本文档提交。查 CI：`cd web; gh run list --limit 1`；查某步日志：`gh run view <id> --log | Select-String "subset"`。
+- **当前版本（2026-09-13 第三轮续作后）**：web 子仓 main = `2396e47`（悬浮播放器 cd1a93a+2396e47、音乐外链卡 cdb840b、SSR 截断修复 2f77b19，CI 全 success）；外仓 master = 本文档提交。查 CI：`cd web; gh run list --limit 1`；查某步日志：`gh run view <id> --log | Select-String "subset"`。
 - 图床：`https://gcore.jsdelivr.net/gh/neutron-star77/fastimage@main/2026/08/`（派生 `thumbs/`、`full/`）
 - 本机工具：Everything CLI `E:\Program Files (x86)\图拉丁工具箱\图吧工具箱202507\tools\其他工具\Everything\es.exe`；双端推送脚本 `F:\AI\git-templates\sync_and_publish.ps1`
 
