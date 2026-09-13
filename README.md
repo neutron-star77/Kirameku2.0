@@ -4,9 +4,9 @@
 
 **きらめく — 像星光一样闪烁**
 
-一个从零搭建的全栈个人博客系统，前端 Next.js，后端 FastAPI，附带 Vue 管理后台。
+一个从零搭建的全栈个人博客系统：前端 Astro 7 + Svelte 5 + React（Cloudflare Workers SSR），边缘 BFF（缓存/聚合/SSE 实时），后端 FastAPI + PostgreSQL，附带 Vue 管理后台。
 
-![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![Astro](https://img.shields.io/badge/Astro-7-ff5a03?logo=astro&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)
 ![Vue 3](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js)
@@ -16,6 +16,10 @@
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 </div>
+
+---
+
+📚 **文档导航**：[`docs/README.md`](docs/README.md)（索引与任务路由）· [站点功能与使用说明](docs/站点功能与使用说明.md) · [项目全景与开发史](docs/项目全景与开发史.md) · [踩坑大全](docs/坑大全.md) · [命令与运维速查](docs/命令与运维速查.md)
 
 ---
 
