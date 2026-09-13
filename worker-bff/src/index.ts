@@ -467,6 +467,20 @@ app.post("/internal/revalidate", async (c) => {
     if (await cache.delete(new Request(u, { method: "GET" }))) purged += 1;
   }
 
+  // 联动清理 web Worker（neutronstar-web）的首页 HTML 边缘缓存：
+  // 原样转发 raw body + 签名（web 端用同一密钥独立验证，这里零重算）。
+  // best-effort：web 端未配置/不可达时静默跳过，靠其 max-age=180 兜底过期。
+  if (c.env.WEB_ORIGIN) {
+    const forward = fetch(`${c.env.WEB_ORIGIN}/internal/revalidate-html`, {
+      method: "POST",
+      headers: { "x-signature": sig, "content-type": "application/json" },
+      body: raw,
+    })
+      .then((r) => r.text())
+      .catch(() => "unreachable");
+    c.executionCtx?.waitUntil(forward);
+  }
+
   // 清完缓存立刻扇出，在线页面无需等 TTL 即可拉新。
   // ⚠️ 广播走 waitUntil 异步发出，**不阻塞** webhook 响应：后端 httpx 只有 3s 超时，
   //    DO 冷启动或某个房间异常不能让整条"发布→失效"链路跟着挂。

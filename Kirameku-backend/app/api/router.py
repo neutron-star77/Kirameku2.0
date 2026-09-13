@@ -16,7 +16,6 @@ from app.api.projects import router as projects_router
 from app.api.friend_links import router as friend_links_router
 from app.api.site_config import router as site_config_router
 from app.api.bili_fav import router as bili_fav_router
-from app.api.bili_audio import router as bili_audio_router
 from app.api.upload import router as upload_router
 from app.api.bookmarks import router as bookmarks_router
 from app.api.visitors import router as visitors_router
@@ -38,7 +37,6 @@ api_router.include_router(projects_router)
 api_router.include_router(friend_links_router)
 api_router.include_router(site_config_router)
 api_router.include_router(bili_fav_router)
-api_router.include_router(bili_audio_router)
 api_router.include_router(upload_router)
 api_router.include_router(bookmarks_router)
 api_router.include_router(visitors_router)
