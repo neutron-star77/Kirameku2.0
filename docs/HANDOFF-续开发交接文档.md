@@ -1,13 +1,13 @@
 # Kirameku2.0 交接文档（给下一个 AI / 开发者）
 
-> 更新时间：**2026-09-13（第三轮续作后）**　主工程：`F:\AI\projects\Kirameku2.0`
+> 更新时间：**2026-09-14（第五轮 UX 打磨后）**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐功能最终形态 = B 站收藏夹悬浮播放器（方案 B：站内直接播放、可拖动、自动连播，后端新增 /api/bili-fav 代理）；修复了 SSR 响应流截断重大 bug（LiveRefreshBanner SSR 返回 null）；旧博客文章迁移补齐（8→11 篇）。** 真正待办只剩 1 项需用户输入：Umami 真实统计凭据（后台直接填）。见 7.5。
+> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；第三轮续作（2026-09-13，见 4.11）：音乐功能最终形态 = B 站收藏夹悬浮播放器（方案 B）+ 修复 SSR 响应流截断重大 bug + 文章迁移补齐 11 篇；第四轮（2026-09-13 晚，见 4.12）：对照 Twilight 三项现代化（壁纸三模式/视口预取/首页边缘缓存）+ TOC 修复 + 播放器重写；**第五轮 UX 打磨（2026-09-14，见 4.13）：issues #5/#3/#2 按序完成——新功能先查轮子约定固化、侧边栏统一右列（single+right，布局层零改动）、全屏壁纸正文可读性分层（.prose-host 加厚玻璃）**。真正待办只剩 1 项需用户输入：Umami 真实统计凭据（后台直接填）。见 7.5。
 >
 > ⚠️ **本文是深层档案，不再是阅读入口**。入口 = [`docs/README.md`](README.md)（索引+任务路由）；全面总结 = [`docs/项目全景与开发史.md`](项目全景与开发史.md)。
 > 原第 6 节坑大全 → [`docs/坑大全.md`](坑大全.md)；原第 8/9/10 节 → [`docs/命令与运维速查.md`](命令与运维速查.md)（编号不变，「坑 6.x」引用仍有效）。
 >
-> 本文按需查阅的小节：§0 铁律｜§1 架构｜§2 仓库｜§3 进度总览｜§4 各阶段实现细节（4.1–4.11）｜§5 关键实现细节｜§7 待办详情
+> 本文按需查阅的小节：§0 铁律｜§1 架构｜§2 仓库｜§3 进度总览｜§4 各阶段实现细节（4.1–4.13）｜§5 关键实现细节｜§7 待办详情
 > 其余文档：`站点功能与使用说明.md`（用户视角）、`方案-v2.0-*.md`（设计锁定）、`CONTEXT.md` + `docs/adr/`（领域）、`web/docs/部署与二次开发指南.md`、`.codebuddy/memory/*.md`（每日原始记录）
 
 ---
@@ -141,6 +141,14 @@ cd ..\Kirameku-backend
 | ⑧ | Twilight 式 hover 交互 | ✅ 已上线 | 桌面悬停顶栏设置图标立即展开面板(离开 260ms 收回)、搜索胶囊悬停展开移出收回、明暗菜单同款；hover 绑定必须在 client:only 组件内(面板水合后才存在)；`f5fdce2` |
 | ⑨ | 全屏沉浸背景模糊滑条(0-20px) + 卡片毛玻璃悬浮 | ✅ 已上线 | localStorage 记忆+early-apply 防闪；壁纸 media 层 blur(--wallpaper-blur)+scale(1.12) 补偿；card-base/m3-card/postcard/float-panel 55%+blur(18px) **is:inline 输出**(lightningcss 把标准 backdrop-filter 改写为 -webkit-,Chrome 146 移除别名→失效,新坑 6.1.22)；线上截图验收；`4a25a0f` |
 | ⑩ | 悬浮播放器重写（APlayer 风格，对齐用户截图） | ✅ 已上线 | 去 iframe 改 <audio>；主源=GitHub bilimusic 仓 audio/{bvid}.mp3（gcore.jsdelivr），（B 站代理回退已移除——风控不可靠 6.3.20，bilimusic 主源唯一，缺曲跳过）；最小化=封面悬浮球可拖可点，刷新/关闭重置固定右下角（不再记位置/宽度）；ended 天然连播；web `9f9828b`、后端 bili_audio.py+router（spi 版已部署）；用户上传音频见使用说明 §2.1 |
+
+### 3.3 第五轮 UX 打磨（2026-09-14，issues #5/#3/#2 按序执行、逐个上线验证后关闭）
+
+| # | 需求 | 状态 | 关键证据 |
+|:--|:--|:--|:--|
+| ① | 轮子调研结论固化：vue3-music-player 对比 + 新功能先查轮子约定（#5） | ✅ | 外仓 `f0efd16`（纯文档）；AGENTS.md 约定区新增一条 + 使用说明 §2.1 对比段；见 4.13.1 |
+| ② | 侧边栏统一到右侧：全部右列编排（#3） | ✅ 已上线验证 | web `64224f1`；只改 sidebarConfig 编排（dual→single、left→right），布局层零改动；三页型 SSR + 线上复验；见 4.13.2 |
+| ③ | 全屏沉浸壁纸下正文可读性分层（#2） | ✅ 已上线验证 | web `2c2f768`；.prose-host 82%+blur(26px)（fullscreen 专属）+ .prose 文字投影；线上 fullscreen+模糊0档实测；见 4.13.3 |
 | — | Twilight 其余差距项（T4 看板娘/T1 Loading/T5-T8） | ⏸️ 按用户取舍 | T4 用户明确不要；T1 与提速目标冲突不建议；T5-T8（作品集/履历/仓库卡/音乐卡）待用户点名 |
 
 ---
@@ -533,6 +541,28 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 3. **Cache API 强制同源**：put/match/delete 的 Request URL 必须与 worker 收到的请求同源，跨源**静默失败**（无报错）→ 键必须用 new URL(request.url).host 动态构造，不能写死正式域名。
 4. **astro preview 不读 .dev.vars**：preview 的 miniflare 由 vite cloudflare 插件构建，运行时 secret（cloudflare:workers env）在本地 preview 拿不到——本地验证 HMAC 端点要么 wrangler dev 要么直接线上验。Astro 7 读运行时 env 用 `import { env } from "cloudflare:workers"`（locals.runtime.env 已移除并抛错）。
 5. **ARIA 隐式 role 陷阱（诊断方法论）**：SegmentedButton 渲染 input[type=radio]（隐式 radio role），querySelectorAll('[role=radio]') 查不到 → 曾误判线上"三选组缺失"排查近一小时；正确姿势=直接看原始 innerHTML/用 Playwright getByRole（匹配隐式 role）。
+
+### 4.13 第五轮 UX 打磨（2026-09-14）：轮子约定 + 侧栏统一右列 + 正文可读性分层（issues #5/#3/#2）
+
+> 三项按用户指定顺序执行，每项完成上线验证后再做下一项；三个 issue 均已带验证证据关闭。
+
+#### 4.13.1 轮子调研结论固化（外仓 `f0efd16`，纯文档，issue #5）
+- AGENTS.md「约定」区新增：**新功能组件先查开源轮子（npm/GitHub），给出「自研/借用/借鉴」对比结论写进对应 issue 再动手**（附 vue3-music-player 先例）。
+- `站点功能与使用说明.md` §2.1 悬浮播放器后补对比结论段：vue3-music-player（v0.0.5，Vue 3 组件库）功能形态自研均覆盖，但本站 island 栈 React 19+Svelte 5 **不能直接引入 Vue 组件**，换库=重写+适配收益为负 → 保留自研 BiliFloatPlayer；React 生态备选（react-h5-audio-player/APlayer 原版）仅未来重写再评估；视觉借鉴走 issue #1。
+
+#### 4.13.2 侧边栏统一到右列（web `64224f1`，issue #3）
+- **只改 `sidebarConfig.ts` 编排，MainGridLayout/responsive-utils 零改动**：`arrangement: "dual"→"single"`、`side: "left"→"right"`、全部 widget 归 primary 列（去掉 stats/calendar/toc 的 `column:"secondary"`）——直接复用 responsive-utils 现有 single-right 镜像分支：内容 `lg:col-start-1`、侧栏 `lg:col-start-2`、副栏不再渲染、页框 96rem→85rem（更聚焦内容）。
+- 右列顺序：作者卡→公告(首页)→音乐兜底卡→[吸顶组] TOC(文章页)→统计→日历→分类→标签。**顺序语义**：SideBar 先渲染 top 组再渲染 sticky 组；issue 要求 TOC 排在公告后、统计前 ⇒ stats/calendar 从 slot:"top" 改 "sticky"、TOC 居吸顶组首位，滚动时整组吸顶保持可视。
+- 后台 `sidebar_widgets` 覆盖（当前仅 profile/announcement 开）不受影响；widget 溢出滚动是 per-widget 机制（WidgetLayout scrollContent/TOC 自带 overflow），吸顶组无需布局层兜底。
+- 验证：首页/归档/文章页 SSR = 单右栏、无 `sidebar-secondary`、footer×2；TOC 吸顶跟随、移动端(<lg)折叠行为不变；线上 `?cb=` 破缓存复验通过。
+
+#### 4.13.3 全屏壁纸正文可读性分层（web `2c2f768`，issue #2）
+- `posts/[slug].astro` 正文 `<article>` 加 `.prose-host` 专用钩子；`Layout.astro` is:inline 玻璃块追加：`html[data-wallpaper-mode="fullscreen"] .prose-host` = **82% 底 + blur(26px) saturate(1.3)**（在 .card-base 通则 55%/18px 之后，同特异性后者胜出），`.prose-host .prose` 文字加 `text-shadow: 0 1px 2px rgba(0,0,0,.25)`——形成"内容越核心玻璃越实"层级。
+- 仅 fullscreen 生效；banner/纯色模式与列表卡/侧栏卡完全不变。遵守坑 6.1.22：backdrop-filter 走 is:inline、`-webkit-` 前缀手写。可选项（顶部 --surface 渐变衬底）未做：82% 实底下标题区已够实，避免过度工程。
+- 验证：线上 fullscreen + 模糊滑条 0 档（壁纸最锐利最严苛）实测正文长文锐利可读、右侧作者卡仍透出壁纸；SSR footer×2。
+
+#### 4.13.4 第五轮新坑（记入坑大全 6.1.24）
+- **本地 TUN 代理劫持 loopback**：本机开着系统代理（TUN 模式）时，`curl http://127.0.0.1:4321/` 会被劫持进代理缓存——响应带 `cf-cache-status: HIT`、`Date` 早于本地进程启动时间，内容是**旧构建的陈旧副本**；且 4321 被上次会话的残留 preview 进程占用时新 preview 起不来（EADDRINUSE 但 curl 仍 200，打到旧进程上）。**解法**：本地验证一律 `curl --noproxy '*'` + URL 加 `?cb=$RANDOM` 破缓存；起 preview 前先 `netstat -ano | grep :4321` 清残留进程，看 log 确认 bind 成功。
 
 ## 5. 关键实现细节（改代码前必看）
 
