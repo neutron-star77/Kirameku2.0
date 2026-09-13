@@ -4,7 +4,7 @@ Kirameku2.0 —— 个人全栈博客工程 **Neutronstar（neutronstar.fun）**
 
 ## 📇 文档导航（AI 必读第一步，省 token）
 
-**接到任务先读 [`docs/README.md`](docs/README.md)**（文档索引 + 30 秒现状 + 任务路由表），然后**只读路由表指定的文档/小节**：
+**接到任务先读 [`docs/README.md`](docs/README.md)**（本协议在 CLAUDE.md / GEMINI.md / .cursorrules / .windsurfrules / .github/copilot-instructions.md 有同步副本——修改阅读协议后任改一份并 cp 同步其余）（文档索引 + 30 秒现状 + 任务路由表），然后**只读路由表指定的文档/小节**：
 
 - 改代码前 → 按场景读 [`docs/坑大全.md`](docs/坑大全.md) 对应分区（40+ 踩坑，现象→原因→解法）
 - 部署/排障/查凭据 → [`docs/命令与运维速查.md`](docs/命令与运维速查.md)
