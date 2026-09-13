@@ -137,6 +137,9 @@ cd ..\Kirameku-backend
 | ④ | 侧栏文章目录（TOC）修复：数据链路断裂 | ✅ 已上线验证 | [slug].astro 从渲染 HTML 提取 h2-h4（rehype-slug 已有 id）传 headings——该 prop 自 P2 起从未接入；TableOfContents 自带 scrollspy/active 高亮/平滑滚动，数据接上即用；线上截图验收（目录+滚动跟随高亮）；commit `9f8ef54` |
 | ⑤ | 顶栏壁纸快速切换按钮 | ✅ | WallpaperSwitch 一键循环三模式（与面板共用存取/广播）；`9f8ef54` |
 | ⑥ | 顶栏语言切换（整页机翻） | ✅ | translate.js v3（MIT，vendor 到 public/translate.js，与 Twilight 同款底层）；中→EN 两态，listener 跟随 swup 新内容，回原文 reload；`9f8ef54` |
+| ⑦ | 显示面板瘦身：配色风格/规范/纹理/布局移后台 | ✅ 已上线 | displaySettings 四开关关 + site_config 新键 display(JSON: hue/layoutMode/texturePreset/textureOpacity) → site-overrides → ConfigCarrier/PostPage；面板只留 页面背景/模糊/动效；commit `f5fdce2` |
+| ⑧ | Twilight 式 hover 交互 | ✅ 已上线 | 桌面悬停顶栏设置图标立即展开面板(离开 260ms 收回)、搜索胶囊悬停展开移出收回、明暗菜单同款；hover 绑定必须在 client:only 组件内(面板水合后才存在)；`f5fdce2` |
+| ⑨ | 全屏沉浸背景模糊滑条(0-20px) + 卡片毛玻璃悬浮 | ✅ 已上线 | localStorage 记忆+early-apply 防闪；壁纸 media 层 blur(--wallpaper-blur)+scale(1.12) 补偿；card-base/m3-card/postcard/float-panel 55%+blur(18px) **is:inline 输出**(lightningcss 把标准 backdrop-filter 改写为 -webkit-,Chrome 146 移除别名→失效,新坑 6.1.22)；线上截图验收；`4a25a0f` |
 | — | Twilight 其余差距项（T4 看板娘/T1 Loading/T5-T8） | ⏸️ 按用户取舍 | T4 用户明确不要；T1 与提速目标冲突不建议；T5-T8（作品集/履历/仓库卡/音乐卡）待用户点名 |
 
 ---
