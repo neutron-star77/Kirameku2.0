@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-13（第三轮续作后）**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐挂件方案 A 已实现并上线（代码就绪、后台开关+链接可配，默认关闭待用户填收藏夹链接）；过程中发现并修复了一个线上重大 bug——LiveRefreshBanner SSR 返回 null 导致首页/归档/文章页响应流被随机截断（用户一直看到的"首页没文章列表"即此），已修复上线并三连验证完整渲染。** 真正待办只剩 2 项需用户输入：一条 B 站收藏夹链接（填后台 music_widget 即上线）+ Umami 真实统计凭据（后台直接填）。见 7.5。
+> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；**第三轮续作（2026-09-13，见 4.11）：音乐挂件方案 A 已实现并上线（代码就绪、后台开关+链接可配，默认关闭待用户填收藏夹链接）；修复了 SSR 响应流截断重大 bug（LiveRefreshBanner SSR 返回 null，首页/归档/文章页被随机截断——用户看到的"首页没文章列表"即此）；旧博客文章迁移补齐（8→11 篇，三代博客全部正式文章已在站）。** 真正待办只剩 2 项需用户输入：一条 B 站收藏夹链接（填后台 music_widget 即上线）+ Umami 真实统计凭据（后台直接填）。见 7.5。
 >
 > 配套阅读（按顺序）：
 > 1. 本文（先读第 0、1、4、6、7 节）
@@ -442,12 +442,23 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 
 **诊断手段（沉淀）**：`astro preview` 吞掉 SSR 错误只显示 `GET / 200 OK`；用 **`pnpm dlx wrangler@4 dev -c wrangler.deploy.json --port 4331` 直接跑构建产物**，SSR 异常会完整打印堆栈。（`wrangler tail` 因本机网络连不上 CF tail 端点不可用。）
 
-#### 4.11.3 全站回归（第三轮，结论：零回归）
+#### 4.11.3 旧博客文章迁移补齐（已完成，2026-09-13）
+
+用户确认"旧文章要迁移"后执行。三代博客源盘点：**Typecho（NAS MariaDB `typecho1.3` 库，5 篇）→ HewllBlog/Next.js（GitHub 私有仓 `neutron-star77/HewllBlog`，`posts/*.md` 5 篇）→ Astro（`F:\AI\projects\blog\neutronstar-front`，8 篇正式 + 主题 demo）**。
+
+- **迁移结果：新站从 8 篇补齐到 11 篇**，新增《洛神赋》(luoshenfu)、《千字文》(qianziwen)、《难经》(nanjing)，id=10/11/12，slug 沿用旧站英文文件名，标签/描述/封面（pic2.ziyuan.wang 外链，实测 200）原样保留，`published_at` 事后用一次性容器脚本改回原文日期 2026-07-29。
+- **做法**：admin API `POST /api/posts`（注意：**urllib 默认 UA 会被 Cloudflare 1010 拦，要带浏览器 UA**；`POST /api/posts` 无 published_at 字段，schema 不收）→ 写 `fix_dates.py` 用 `app.database.engine` 直接 UPDATE（容器 `docker run --rm` 一次性脚本模式，**`app.config` 强制要求 SECRET_KEY env，哑值即可**；MariaDB 库名 `typecho1.3` 含点，SQL 要用反引号）。
+- **核对结论**：Typecho 5 篇与新站完全重合（《0-JpgLossless》→《图片压缩》、《13》→《革命》、《17》→《大远征》，标题在后代博客改过）；HewllBlog 的 yang-gensi→《革命》、bt-7274→《BT-7274》也已在新站。**除主题 demo（hello-astro/launch-day/guide 等）外无遗漏，迁移闭环。**
+- **渲染验证**：洛神赋/难经详情页完整（143KB/185KB，footer 在，`<style>` 自定义样式块透传正常——新站 markdown 管线允许原生 HTML，与《44》的 `<details>` 一致）。
+- **搜素/字体注意**：pagefind 索引与字体子集只在 CI 构建时重建，当前 3 篇新文章要等下次 web push 部署才会进搜索索引与字体子集。
+
+#### 4.11.4 全站回归（第三轮，结论：零回归）
 
 - 13 个路由全 200（/ /2/ /archive/ /moments/ /albums/ /friends/ /messages/ /about/ /novel/ /anime/ /sitemap-index.xml /robots.txt /auth/callback/）。
 - BFF/后端 health ok；admin 200；www 301；BFF 缓存 `X-Cache: MISS`（失效联动正常）。
 - 首页/归档/文章详情三个 SSR 页面修复后完整渲染；静态页不受影响。
 - 音乐挂件禁用态零残留；启用态卡片渲染正确。
+- **旧文章迁移补齐后复验**：文章 8→11 篇（洛神赋/千字文/难经），详情页完整渲染，`/api/posts` 11 条、BFF 与后端一致，归档/首页分页正常。
 
 ---
 
