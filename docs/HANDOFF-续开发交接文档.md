@@ -2,12 +2,12 @@
 
 > 更新时间：**2026-09-14（第五轮 UX 打磨后）**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；第三轮续作（2026-09-13，见 4.11）：音乐功能最终形态 = B 站收藏夹悬浮播放器（方案 B）+ 修复 SSR 响应流截断重大 bug + 文章迁移补齐 11 篇；第四轮（2026-09-13 晚，见 4.12）：对照 Twilight 三项现代化（壁纸三模式/视口预取/首页边缘缓存）+ TOC 修复 + 播放器重写；**第五轮 UX 打磨（2026-09-14，见 4.13）：issues #5/#3/#2 按序完成——新功能先查轮子约定固化、侧边栏统一右列（single+right，布局层零改动）、全屏壁纸正文可读性分层（.prose-host 加厚玻璃）**。真正待办只剩 1 项需用户输入：Umami 真实统计凭据（后台直接填）。见 7.5。
+> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；第三轮（见 4.11）：音乐悬浮播放器 + SSR 截断修复 + 文章补齐 11 篇；第四轮（见 4.12）：壁纸三模式/视口预取/首页边缘缓存；第五轮（见 4.13）：侧栏统一右列 + 正文可读性分层；**第六轮（2026-09-14，见 4.14）：issues #1-#5 全部关闭——音频自动同步（24 首入库+每日定时）、播放器 Dribbble 玻璃重设计（m4a 主源）、全屏文字卡全透明**。真正待办只剩需用户输入项：Umami 凭据、友链/杂谈/关于/小说内容。见 7.5。
 >
 > ⚠️ **本文是深层档案，不再是阅读入口**。入口 = [`docs/README.md`](README.md)（索引+任务路由）；全面总结 = [`docs/项目全景与开发史.md`](项目全景与开发史.md)。
 > 原第 6 节坑大全 → [`docs/坑大全.md`](坑大全.md)；原第 8/9/10 节 → [`docs/命令与运维速查.md`](命令与运维速查.md)（编号不变，「坑 6.x」引用仍有效）。
 >
-> 本文按需查阅的小节：§0 铁律｜§1 架构｜§2 仓库｜§3 进度总览｜§4 各阶段实现细节（4.1–4.13）｜§5 关键实现细节｜§7 待办详情
+> 本文按需查阅的小节：§0 铁律｜§1 架构｜§2 仓库｜§3 进度总览｜§4 各阶段实现细节（4.1–4.14）｜§5 关键实现细节｜§7 待办详情
 > 其余文档：`站点功能与使用说明.md`（用户视角）、`方案-v2.0-*.md`（设计锁定）、`CONTEXT.md` + `docs/adr/`（领域）、`web/docs/部署与二次开发指南.md`、`.codebuddy/memory/*.md`（每日原始记录）
 
 ---
@@ -149,6 +149,14 @@ cd ..\Kirameku-backend
 | ① | 轮子调研结论固化：vue3-music-player 对比 + 新功能先查轮子约定（#5） | ✅ | 外仓 `f0efd16`（纯文档）；AGENTS.md 约定区新增一条 + 使用说明 §2.1 对比段；见 4.13.1 |
 | ② | 侧边栏统一到右侧：全部右列编排（#3） | ✅ 已上线验证 | web `64224f1`；只改 sidebarConfig 编排（dual→single、left→right），布局层零改动；三页型 SSR + 线上复验；见 4.13.2 |
 | ③ | 全屏沉浸壁纸下正文可读性分层（#2） | ✅ 已上线验证 | web `2c2f768`；.prose-host 82%+blur(26px)（fullscreen 专属）+ .prose 文字投影；线上 fullscreen+模糊0档实测；见 4.13.3 |
+
+### 3.4 第六轮（2026-09-14，issues #4/#1 + 用户追加需求，全部 issues 关闭）
+
+| # | 需求 | 状态 | 关键证据 |
+|:--|:--|:--|:--|
+| ① | B站收藏夹音频自动转码上传 bilimusic（#4） | ✅ | 外仓 `9edf079`（scripts/bilimusic-sync.ps1）+ bilimusic 仓 `9a68aa1`（24 首 m4a 入库）；schtasks 每日 09:30；幂等验证通过；见 4.14.1 |
+| ② | 播放器视觉升级 Dribbble Glassmorphism（#1） | ✅ 已上线验证 | web `a56bf83`；暗玻璃+高光描边+封面光晕+细滑条+白圆主按钮；m4a 主源→mp3 回退；见 4.14.2 |
+| ③ | 全屏文字卡片全透明（用户会话追加） | ✅ 已上线验证 | 同 `a56bf83`；fullscreen 下 swup-container/card-base/m3-card/postcard 全透明，banner 55% 保留；见 4.14.3 |
 | — | Twilight 其余差距项（T4 看板娘/T1 Loading/T5-T8） | ⏸️ 按用户取舍 | T4 用户明确不要；T1 与提速目标冲突不建议；T5-T8（作品集/履历/仓库卡/音乐卡）待用户点名 |
 
 ---
@@ -563,6 +571,27 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 
 #### 4.13.4 第五轮新坑（记入坑大全 6.1.24）
 - **本地 TUN 代理劫持 loopback**：本机开着系统代理（TUN 模式）时，`curl http://127.0.0.1:4321/` 会被劫持进代理缓存——响应带 `cf-cache-status: HIT`、`Date` 早于本地进程启动时间，内容是**旧构建的陈旧副本**；且 4321 被上次会话的残留 preview 进程占用时新 preview 起不来（EADDRINUSE 但 curl 仍 200，打到旧进程上）。**解法**：本地验证一律 `curl --noproxy '*'` + URL 加 `?cb=$RANDOM` 破缓存；起 preview 前先 `netstat -ano | grep :4321` 清残留进程，看 log 确认 bind 成功。
+
+### 4.14 第六轮（2026-09-14）：音频自动化 + 播放器玻璃重设计 + 文字卡全透明（issues #4/#1 清零）
+
+#### 4.14.1 音频自动同步（外仓 `9edf079`，issue #4）
+- `scripts/bilimusic-sync.ps1`：BFF `/api/bili-fav` 拉清单（复用后端 spi-buvid 风控链路，客户端不直连 B 站 API）→ 与 `F:\AI\projects\bilimusic` 克隆的 audio/ 做 diff → yt-dlp `-x --audio-format m4a --playlist-items 1 --sleep-requests 2` 逐曲无损抽音轨（多P合集只取P1，单曲覆盖写 `{bvid}.m4a`）→ git 显式路径 add → commit → push。
+- **执行环境=本机 Windows**（非 NAS）：本机 git 凭据可直接 push；yt-dlp/ffmpeg 经 winget 安装（`%LOCALAPPDATA%\Microsoft\WinGet\Links` 加 PATH）。
+- **音质实测**：未登录 130-250kbps AAC（issue 预估的"未登录只有 64k"已过时）；Edge cookie 因 app-bound 加密 DPAPI 失败（yt-dlp #10927）、本机无 Chrome → 脚本支持可选 `F:\AI\projects\bilimusic.cookies.txt`（yt-dlp 格式 SESSDATA，**必须放仓外**），存在即启用，`-Force` 可重下升级；ffprobe 检测 <100kbps 告警。
+- 定时：`schtasks` 任务「bilimusic-sync」每日 09:30；**幂等已验证**（已入库跳过、失效视频 BV1TJ411K7nz 每次告警重试但不入库、无空提交）。
+- 前端配合（见 4.14.2）：`AUDIO_EXTS = [".m4a", ".mp3"]` 候选降级 + 每 bvid 回退记忆（extIdxRef），与仓内全 m4a 一致且兼容手动传 mp3。
+- ⏳ 已知延迟：gcore.jsdelivr 的 @main 解析缓存（~12h）purge API 调用后仍需传播，新曲目线上可播有半天内延迟，属 issue 预期。
+
+#### 4.14.2 播放器 Dribbble 玻璃重设计（web `a56bf83`，issue #1）
+- 三张 Dribbble 参考用 browser-use 实看（21918633 完整范式：暗玻璃/右圆封面高光描边/细白进度条；另两张取气质）。
+- 固定暗玻璃卡：`rgba(17,18,26,.58)` + blur(24px) saturate(1.4)（**inline style 双前缀写死**，组件不再挂 .float-panel 类、与壁纸模式解耦）+ 1px 高光描边（顶 .3/整体 .14）+ 24px 圆角 + 深投影。
+- 封面光晕 = 同图 blur-2xl 溢出层（纯 CSS，无 canvas 取色）；进度/音量 = 4px 细轨圆头滑条（组件内 `<style>` 注入 `.bili-range`，`--bili-fill` 传填充比）；主按钮白底圆形 hover 放大；SVG 图标（play/pause/prev/next）；列表项带封面缩略图。
+- 逻辑未动：拖动/最小化/连播/坏曲跳过全保留；仅音源改候选降级制。
+
+#### 4.14.3 全屏文字卡全透明（web `a56bf83`，用户会话追加需求，取代 4.13.3 的 82% 分层）
+- 用户拍板：全屏沉浸下"文章和文字卡片全部全透明，可以看到背景图"。Layout.astro fullscreen 规则改为：`#swup-container` 去 30% 底+blur；`.card-base/.m3-card/.m3-blog-postcard` transparent+无 blur+无阴影（置于 55% 通则之后，同特异性后者胜出）；`.float-panel` 保留玻璃（播放器/设置/搜索浮层需分层）。
+- 可读性兜底 = 正文 text-shadow（保留）+ 壁纸模糊滑条（用户自调）；banner 模式 55% 不变；`.prose-host` 钩子保留仅作 text-shadow 作用域。
+- **注意**：文章 markdown 内容内嵌的 `<style>`（如《洛神赋》的 `.lsf-stage`/`.prose{background:...!important}` 古风排版）是**内容自带样式**，站点规则不覆盖——文章观感"不透明"若来自它，改文章内容本身。
 
 ## 5. 关键实现细节（改代码前必看）
 
