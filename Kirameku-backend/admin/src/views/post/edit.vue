@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -50,6 +50,62 @@ const tagInputVisible = ref(false);
 const tagInputValue = ref("");
 const coverUploading = ref(false);
 const coverInputRef = ref<HTMLInputElement>();
+
+// 正文字体实时预览：选中字体后动态注入 @font-face（走公开 file 接口，长缓存），
+// 用 FontFace API 预加载再渲染，缺字由 font-family 链回退，不破版。
+const previewMode = ref<"body" | "heading" | "poem">("body");
+const previewLoaded = ref(true);
+const previewStyleEl = ref<HTMLStyleElement | null>(null);
+
+const selectedFont = computed(
+  () => fontList.value.find(f => f.id === form.value.font_id) || null
+);
+
+const previewFontStyle = computed(() => {
+  if (!selectedFont.value) return undefined;
+  return { fontFamily: `'${selectedFont.value.family}', system-ui, sans-serif` };
+});
+
+const previewSamples: Record<string, { text: string; cls: string }> = {
+  body: {
+    text: "天行健，君子以自强不息。地势坤，君子以厚德载物。故不积跬步，无以至千里；不积小流，无以成江海。",
+    cls: "text-base leading-8"
+  },
+  heading: {
+    text: "风雅颂 · 兰亭集序",
+    cls: "text-3xl font-bold"
+  },
+  poem: {
+    text: "春江潮水连海平，海上明月共潮生。滟滟随波千万里，何处春江无月明！",
+    cls: "text-lg leading-9"
+  }
+};
+
+watch(
+  () => form.value.font_id,
+  async id => {
+    previewLoaded.value = false;
+    if (!previewStyleEl.value) {
+      previewStyleEl.value = document.createElement("style");
+      document.head.appendChild(previewStyleEl.value);
+    }
+    previewStyleEl.value.textContent = "";
+    const f = fontList.value.find(x => x.id === id);
+    if (!f) {
+      previewLoaded.value = true;
+      return;
+    }
+    previewStyleEl.value.textContent =
+      `@font-face{font-family:"${f.family}";src:url("/api/fonts/${f.id}/file") format("woff2");font-display:swap;font-weight:400;}`;
+    try {
+      await document.fonts.load(`400 16px "${f.family}"`, previewSamples[previewMode.value].text);
+    } catch {
+      // 加载失败（字体文件过大/网络）仍显示，交给字体回退
+    }
+    previewLoaded.value = true;
+  },
+  { immediate: true }
+);
 
 const rules = {
   title: [{ required: true, message: "请输入标题", trigger: "blur" }],
@@ -251,6 +307,34 @@ onMounted(async () => {
             </el-form-item>
           </el-col>
         </el-row>
+
+        <el-form-item label="字体预览">
+          <div class="w-full">
+            <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+              <span class="text-sm text-gray-500">
+                {{
+                  selectedFont
+                    ? `当前：${selectedFont.name}（${selectedFont.family}）`
+                    : "当前：默认字体（Yozai）"
+                }}
+              </span>
+              <el-radio-group v-model="previewMode" size="small">
+                <el-radio-button value="body">正文</el-radio-button>
+                <el-radio-button value="heading">标题</el-radio-button>
+                <el-radio-button value="poem">古诗</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div
+              v-loading="!previewLoaded"
+              class="rounded-md border border-gray-200 dark:border-gray-700 p-4 min-h-24 bg-white dark:bg-gray-900"
+              :style="previewFontStyle"
+            >
+              <p :class="previewSamples[previewMode].cls">
+                {{ previewSamples[previewMode].text }}
+              </p>
+            </div>
+          </div>
+        </el-form-item>
 
         <el-row :gutter="20">
           <el-col :span="8">

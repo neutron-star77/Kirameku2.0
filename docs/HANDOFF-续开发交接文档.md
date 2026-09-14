@@ -601,6 +601,16 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **接入点**：`[slug].astro` 中 **TOC 提取先于增强**（目录文字干净）；`.pinyin-reading` 作用域样式（42rem 窄栏居中、衬线、2.5 行距容纳注音、首行缩进、rt 主题色 0.42em）。首个坑：渲染产物变量是 const 不可重赋值（ILLEGAL_REASSIGNMENT），用 `renderedHtml`/`html` 两变量解。
 - **验证**：928 ruby、装饰全剥、TOC 干净、未命中文章零影响、footer×2；线上 `?cb=` 复验 + banner/fullscreen 两模式截图确认。
 
+#### 4.15 字体系统（2026-09-14，9 款 + 后台实时预览）
+- **背景**：古文/装饰类正文字体需求。初始 3 款（霞鹜文楷/思源宋体/思源黑体）由 `docs/HANDOFF-字体部署未完成事项.md` 交接部署（后端 `0004_font_asset` 迁移 + `scripts/seed_fonts.py` 种子 + admin 文章编辑下拉 + BFF `tagsForPath` 加 fonts tag）。同日追加 6 款：敬峰中山王篆、霞鹜篆书、西楼瘦金、Aa宋徽宗瘦金体全库、中研院楚系简帛文字、中研院金文。
+- **入库方式差异**：初始 3 款走 NAS seed 脚本；追加 6 款改走**登录态 API 上传**（`POST /api/auth/login` 拿 JWT → `POST /api/fonts` multipart，python urllib + 浏览器 UA 绕过 CF 403），无需动容器/重建镜像——**后续加字体默认走此通道**，文件名/授权元数据随表单提交。
+- **woff2 转换**：fontTools（后端 requirements 已带）+ brotli；TTF→woff2 平均压到 1/2~1/4（Aa瘦金 20.7MB→10.9MB）。
+- **前端零改动**：`[slug].astro` 的 `--post-font` 链 `"所选字体", var(--m3e-font-sans)` 天然缺字回退，小字库字体（霞鹜篆书 210 字/中研院 5181+3925 字）不破版；@font-face 按文章动态注入 `format("woff2")`，**字体文件必须存 woff2**。
+- **admin 实时预览**（`admin/src/views/post/edit.vue`）：字体下拉下方「字体预览」卡片——watch `form.font_id` → 动态 `<style>` 注入 `@font-face{src:url("/api/fonts/{id}/file")}` → `document.fonts.load()` 预加载后渲染；「正文/标题/古诗」三段示例切换；未选字体显示默认 Yozai；加载失败静默回退。
+- **部署注意**：admin 改后须 `NODE_OPTIONS=--max-old-space-size=8192` + `rimraf dist && vite build`（**vite 7 在 outDir 不存在时 closeBundle 的 getPackageSize 会 ENOENT，先建空 dist 目录**）→ robocopy /MIR 到 `U:\kirameku\backend\admin\dist` → ssh hewll 重启容器（bind mount inode 失效坑）。
+- **授权台账**：id 4/5 OFL-1.1 可商用；id 6/7 个人非商用（站长已知风险自担，公网分发有越权争议）；id 8/9 中研院史语所字库（研究用途）。
+- **已知限制**：后台暂无独立字体管理页（增删走 API）；BFF 字体列表 60s 边缘缓存无主动失效；霞鹜篆书仅 210 字属先行测试版。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
