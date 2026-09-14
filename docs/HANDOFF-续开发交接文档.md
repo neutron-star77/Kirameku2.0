@@ -165,7 +165,7 @@ cd ..\Kirameku-backend
 
 | # | 需求 | 状态 | 关键证据 |
 |:--|:--|:--|:--|
-| ① | 页面背景（纹理）从显示设置面板提取为顶栏独立图标 | ✅ 已上线验证 | TextureSwitch.svelte：图标随纹理变化、hover 面板、点击循环；DisplaySettings 面板移除纹理段；见 4.22① |
+| ① | 页面背景（壁纸模式：横幅/全屏沉浸/纯色）顶栏图标 | ✅ 已上线（用户纠正：要的是壁纸模式非纹理） | WallpaperSwitch.svelte（第 4 轮已有）即用户所指；第八轮撤销纹理图标 TextureSwitch，背景纹理恢复显示面板段二；见 4.22① + 4.23 |
 | ② | 图标移开菜单收回（鼠标在菜单上保持） | ✅ 已上线验证 | 纹理/语言面板 260ms 延迟收回 + pt-2 hit area；见 4.22② |
 | ③ | 语言切换移回前端 + Twilight 式多语言（14 种） | ✅ 已上线验证 | TranslateSwitch 重写为下拉面板；translate.js v4 整页机翻 + localStorage 记忆 + reset 还原；见 4.22③ |
 | ④ | 全屏沉浸文章/目录玻璃拟态 + 字清楚 | ✅ 已上线验证 | prose 55%+blur18、TOC 卡 48%+blur16、文字投影、悬浮目录玻璃；见 4.22④ |
@@ -681,13 +681,25 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 
 用户对照 [Spr-Aachen/Twilight](https://github.com/Spr-Aachen/Twilight) 源码提出 5 项前端改造（web 子仓，后端/BFF 零改动）。
 
-- **① 页面背景（纹理）提取为顶栏图标**：`DisplaySettings.svelte` 面板的纹理段移除（注释指向新图标）；新建 `components/organisms/TextureSwitch.svelte`——图标随当前纹理变化、桌面 hover 展开 6 项面板（none 收尾防误触纯色）、点击图标循环切换；与面板共用 `setting-utils` 存取 + `texture:change` 广播跨组件同步。`TopAppBar.astro` 在 WallpaperSwitch 后挂载，`resolveTextureOptions().enable` 控制显隐（纹理系统关闭时零残留）。
+- **① 页面背景（壁纸模式）顶栏图标**：用户指认的「页面背景」= 切换全屏沉浸/横幅/纯色的 WallpaperSwitch.svelte（第 4 轮已上线，banner/fullscreen/none 点击循环）。第八轮修正（2026-09-15）：撤销误建的背景纹理图标 TextureSwitch.svelte（文件删除、TopAppBar 挂载移除、resolveTextureOptions 引用清理），背景纹理选择恢复显示设置面板段二（DisplaySettings 6 宫格 + 浓度滑条，none 用 material-symbols:block）；同时修复顶栏图标空白根因（见 4.23）。
 - **② 图标移开菜单收回（鼠标在菜单上保持）**：纹理/语言两个新面板均实现桌面 hover 展开、离开 260ms 收回；面板与图标间距用 **pt-2（padding 而非 margin）** 扩大 hit area，鼠标经过间隙不触发关闭。踩坑：Svelte 的 `class:list` 是 class directive 语法而非数组工具——误用让面板 class 变成字面量 "list"、`float-panel-closed` 失效（面板不隐藏）；统一改为 `class={[...].join(" ")}`。
 - **③ 语言切换移回前端 + 多语言**：`TranslateSwitch.svelte` 从「中→EN 两态」重写为 Twilight 式下拉面板——14 种语言（en/zh_hans/zh_hant/ja/ko/ru/de/fr/es/tr/ar/th/vi/id，国旗+名称+当前勾选），translate.js v4（与 Twilight 同款底层，vendor 已升级到 4.0.5）整页机翻；localStorage `selected-language` 记忆、刷新自动恢复；切回简体中文调 `translate.reset()` 干净还原不刷新；`listener.start()` 跟随 swup 换页自动翻译新内容。语言清单单一数据源：新增 `src/i18n/languageConfig.ts`（`SOURCE_TRANSLATE_LANG = "chinese_simplified"`）；`i18nKey.ts` 加 `selectLanguage`，10 个语言词典补词条。
 - **④ 全屏沉浸玻璃拟态 + 字清楚**（`Layout.astro` fullscreen 规则增强）：文字卡轻玻璃 30%→**48% + blur16 + 高光边**；`.prose-host`（正文容器）专属 **55% + blur18**；侧栏目录卡（.m3-card）同 48% 通则；`#toc` / 悬浮目录 / 正文文字加投影（暗色深投影 `rgba(0,0,0,.35)`、亮色淡白投影 `rgba(255,255,255,.3)`，`:not(.dark)` 分支避免弄脏）；`.m3-floating-toc-panel` 移动端弹层玻璃化。
 - **⑤ 无标题不显示目录栏**：`SidebarTOC.astro` `headings.length === 0` 直接 `return`（防空壳卡片）；`SideBar.astro` 编排层追加 `(widget.type !== "toc" || headings.length > 0)` 过滤（无空盒间距残留）；`FloatingControls.astro` TOC FAB 加 `headings.length > 0` 条件（无标题文章不出现悬浮目录按钮）。
 
 - **验证**：`npm run build` 通过；preview（workerd）实测——语言切日文整页机翻、切回中文 reset 还原不刷新、localStorage 双键正确；纹理点击循环（localStorage/texture-preset 同步）；hover 展开/260ms 收回；难经（正文无 h2-h4）侧栏+悬浮 TOC 均隐藏、深色霓虹笔记（有 h2）目录正常渲染；fullscreen 下 `.prose-host` computed = 55%+blur(18px)、TOC 卡片 = 48%+blur(16px)、目录链接 text-shadow 生效。
+
+#### 4.23 第八轮修正（2026-09-15，用户纠正方向 + 图标空白根因）
+
+**用户纠正**：「页面背景」指切换全屏沉浸/横幅的壁纸模式（WallpaperSwitch），**不是**背景纹理（TextureSwitch）；语言切换一直在前端（顶栏「翻译页面」），用户反馈「没出现」是按钮图标空白导致宽度归零不可见。
+
+- **图标空白根因**：`@iconify/svelte` 被 astro.config alias 为 OfflineIcon，渲染前必须 `addCollection` 注册数据；上游只在 `atoms/display/Icon.svelte` 注册，而首页不水合该组件 → 顶栏壁纸/翻译按钮图标空、按钮 `width:0` 从顶栏「消失」（移动端 390px 实测）。修复：
+  - 新增 `src/utils/register-local-icons.ts` 共享注册模块（循环 `addCollection`），WallpaperSwitch / TranslateSwitch / DisplaySettings 顶部副作用导入（幂等）；
+  - `src/generated/local-icon-collections.ts` 补 material-symbols 102 图标子集（`scripts/icons/patch-material-symbols.mjs`，上游生成脚本缺失）；
+  - 全站 16 处修正不存在的图标名（`lock-rounded→lock`、`deployed-code-outline-rounded→deployed-code`、`motion-photos-off→motion-photos-paused-rounded`、`radio-button-partial-outline→radio-button-partial`、`search-off-outline-rounded→search-off-rounded`、`share-*-rounded→share`——material-symbols 集合无这些变体，astro-icon 与 iconify 一并修复）。
+- **撤销纹理图标**：删除 TextureSwitch.svelte + TopAppBar 挂载 + resolveTextureOptions 引用；背景纹理选择恢复显示设置面板段二（6 宫格 + 浓度滑条，none 图标用 block）。
+- **验证**：build 通过；preview + 线上 018ba0b 实测——桌面/移动端壁纸与翻译按钮图标渲染（svgLen>0）、按钮可见（此前 width 0）、语言面板 14 项展开/点击/移动端不溢出、壁纸三态循环正常；X-Build-Id=018ba0b 线上一致。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
