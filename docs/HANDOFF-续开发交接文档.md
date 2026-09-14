@@ -593,6 +593,14 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - 可读性兜底 = 正文 text-shadow（保留）+ 壁纸模糊滑条（用户自调）；banner 模式 55% 不变；`.prose-host` 钩子保留仅作 text-shadow 作用域。
 - **注意**：文章 markdown 内容内嵌的 `<style>`（如《洛神赋》的 `.lsf-stage`/`.prose{background:...!important}` 古风排版）是**内容自带样式**，站点规则不覆盖——文章观感"不透明"若来自它，改文章内容本身。
 
+#### 4.14.4 洛神赋纯文字拼音阅读版（web `2a63861`，用户会话追加需求）
+- **需求**：《洛神赋》重新部署为纯文字版（剥掉内容内嵌的舞台画/花瓣/宣纸底样式），每字上方标注拼音，参考 Dribbble 的排版质感。
+- **实现**：`utils/pinyin-reading.ts` 在 SSR 渲染链做 HTML 后处理（不动后端数据）——hast 解析 → 剥 `<style>` 与装饰元素（`STRIP_CLASSES`，.lsf-note 题注是文字保留）→ 文本节点经 pinyin-pro 逐字转 `<ruby>字<rt>拼音</rt></ruby>`。`pre/code/script` 内不注音；任一异常整体回退原文。
+- **多音字**：pinyin-pro 按词组上下文消歧，实测「余**朝**京师=cháo / **朝**霞=zhāo」「**髣**髴=fǎngfú」「**秣**驷=mò sì」全对。
+- **白名单驱动**：`articleConfig.pinyinReading.slugs`（当前 `["luoshenfu"]`），未命中文章零影响（千字文实测 0 ruby）。给其他文章开注音=往数组加 slug。
+- **接入点**：`[slug].astro` 中 **TOC 提取先于增强**（目录文字干净）；`.pinyin-reading` 作用域样式（42rem 窄栏居中、衬线、2.5 行距容纳注音、首行缩进、rt 主题色 0.42em）。首个坑：渲染产物变量是 const 不可重赋值（ILLEGAL_REASSIGNMENT），用 `renderedHtml`/`html` 两变量解。
+- **验证**：928 ruby、装饰全剥、TOC 干净、未命中文章零影响、footer×2；线上 `?cb=` 复验 + banner/fullscreen 两模式截图确认。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
