@@ -631,6 +631,12 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **全屏文字卡轻玻璃**：4.14.3 把 fullscreen 文字卡改全透明，用户要求"不要完全透明、参考毛玻璃主题"。`Layout.astro` 的 fullscreen 覆盖规则改为**轻玻璃**：`color-mix(in oklab, var(--surface-container) 30%, transparent)` + `blur(14px) saturate(1.3)`（双前缀 <style is:inline>）+ `inset 0 1px 0 rgba(255,255,255,.08)` 高光 + `0 8px 32px rgba(0,0,0,.1)` 光影；`.float-panel` 不列入仍保留 55% 强玻璃。浏览器实测 fullscreen 下 `.m3-blog-postcard`：bg `oklab(... / 0.3)` + `blur(14px) saturate(1.3)` 生效（非 none）。
 - **注意**：站点现含唯一 SSR 路由 `/posts/`（其余全静态），build 进入 server entrypoints + `Parsed 1 valid redirect rule`；本地验证用 `pnpm build && pnpm preview`。
 
+#### 4.19 /posts 改为独立文章卡片列表页（用户会话追加，取代 4.18 的纯 301 方案）
+- **背景**：4.18 把 /posts 改成真 301 → /archive，用户反馈「点导航文章却到了归档，不是我想要的列表」。文章列表本并入归档，但用户期望「文章」是真正独立的列表页。
+- **实现**：`web/src/pages/posts.astro` 从纯重定向改为 **SSR 文章卡片列表页**——复用首页同款 `PostPage`（m3-blog-postcard 卡片网格）+ `PagePagination`；分页用 **`?page=` 查询参数**（不能用 `/posts/N/` 路径，会被 `posts/[slug].astro` 动态详情路由捕获）。
+- **配套**：`SidebarPage` 联合类型与 `resolvePageKey` 新增 `"posts"`，使导航「文章」直达 `/posts` 且 `aria-current` 高亮（「归档」不高亮）；页面标题为字面量「文章」；数据 `getArchivePage(pageNum, postListConfig.pageSize=8)`（11 篇 → 2 页）。
+- **验证**：`/posts/` 200 卡片列表（无 Redirecting 占位、非年份归档）、「文章」高亮、「下一页 → /posts/?page=2」正常；build + preview + 真 Chromium DOM 核验通过。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
