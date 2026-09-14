@@ -637,6 +637,13 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **配套**：`SidebarPage` 联合类型与 `resolvePageKey` 新增 `"posts"`，使导航「文章」直达 `/posts` 且 `aria-current` 高亮（「归档」不高亮）；页面标题为字面量「文章」；数据 `getArchivePage(pageNum, postListConfig.pageSize=8)`（11 篇 → 2 页）。
 - **验证**：`/posts/` 200 卡片列表（无 Redirecting 占位、非年份归档）、「文章」高亮、「下一页 → /posts/?page=2」正常；build + preview + 真 Chromium DOM 核验通过。
 
+#### 4.20 修复「点导航文章跳归档」：关闭 swup 页面持久缓存（用户会话追加）
+- **症状**：/posts 升级为独立列表页后，无痕/内窗正常，但正常浏览器窗口即使 Ctrl+F5，点「文章」仍退到 `/archive`。
+- **定性**：服务端 `/posts` 与 `/posts/` 均 200「文章」卡片列表（curl + 无痕实测双证），`/posts` 无斜杠仅 308→`/posts/`（正常 trailingSlash）。问题在客户端 swup。
+- **根因**：`web/astro.config.mjs` 中 `swup({ cache: true, ... })`，@swup/astro 以 **cache-first** 把每个页面 HTML 持久缓存进浏览器；旧版 `/posts`（当时=归档）响应一旦入缓存，之后点「文章」恒命中旧缓存、不再发网络请求，刷新也无法清除（无痕无此缓存故正常）。
+- **修复**：`cache: true → false`（同时自动关闭 preload）。改后每次点「文章」都走网络拿最新，杜绝 stale-forever。副作用：失去页面预取/缓存优化（博客内容实时更新，正确性优先，可接受）。
+- **兜底**：若用户历史存在残留 Service Worker（当前部署无 SW），建议浏览器「清除站点数据」一次性清理。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
