@@ -626,6 +626,11 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **修复（2026-09-14 第二轮）**：① 字体切换瞬间清空旧提示，避免残留上一字体的警告；② 加载后 `document.fonts.ready` 加 5s 超时兜底（ready 偶发挂起）；③ 检测前 `document.fonts.check` 确认字体就绪，3s 内未就绪放弃检测（**不强制测量**——此前 10MB 大字体未加载完就测量会全字符误判缺字，导致切到全字库字体仍显示假警告）；④ 清空字体（默认）时提示一并清空。
 - **坑**：浏览器缓存旧 index.html 导致新旧资源混用（主 bundle 名判断：新 `index-B08wCpFj.js`）；验证前端改动必须 DevTools 禁缓存 + 硬刷新。
 
+#### 4.18 /posts/ 真 301 + 全屏卡片轻玻璃（用户会话追加）
+- **修复 /posts/ → /archive/**：`posts.astro` 用 `Astro.redirect()`，但因 `astro.config` output static，构建把重定向落成了 **HTTP 200 的 meta-refresh 占位页**（body 文案 "Redirecting from /posts/ to /archive/"、2s 后跳转、`noindex`——SEO 差且闪现）。加 `export const prerender = false` 让它走 SSR 返回**真 301**（`Astro.redirect(url("/archive/"), 301)`）。验证：`curl -I https://neutronstar.fun/posts/` = 301 + `Location: /archive/`；follow 得 200。
+- **全屏文字卡轻玻璃**：4.14.3 把 fullscreen 文字卡改全透明，用户要求"不要完全透明、参考毛玻璃主题"。`Layout.astro` 的 fullscreen 覆盖规则改为**轻玻璃**：`color-mix(in oklab, var(--surface-container) 30%, transparent)` + `blur(14px) saturate(1.3)`（双前缀 <style is:inline>）+ `inset 0 1px 0 rgba(255,255,255,.08)` 高光 + `0 8px 32px rgba(0,0,0,.1)` 光影；`.float-panel` 不列入仍保留 55% 强玻璃。浏览器实测 fullscreen 下 `.m3-blog-postcard`：bg `oklab(... / 0.3)` + `blur(14px) saturate(1.3)` 生效（非 none）。
+- **注意**：站点现含唯一 SSR 路由 `/posts/`（其余全静态），build 进入 server entrypoints + `Parsed 1 valid redirect rule`；本地验证用 `pnpm build && pnpm preview`。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
