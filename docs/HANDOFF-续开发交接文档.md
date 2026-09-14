@@ -2,7 +2,7 @@
 
 > 更新时间：**2026-09-14（第五轮 UX 打磨后）**　主工程：`F:\AI\projects\Kirameku2.0`
 > 一句话现状：**正式站 <https://neutronstar.fun> 已经是新站** —— Shirone 外壳（Astro 7 + Svelte 5 + React 19 islands）+ 真实后端数据（NAS FastAPI/PG）+ SSE 实时 + GitHub 登录/评论/点赞，跑在 **Cloudflare Workers（SSR）** 上。
-> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；第三轮（见 4.11）：音乐悬浮播放器 + SSR 截断修复 + 文章补齐 11 篇；第四轮（见 4.12）：壁纸三模式/视口预取/首页边缘缓存；第五轮（见 4.13）：侧栏统一右列 + 正文可读性分层；**第六轮（2026-09-14，见 4.14）：issues #1-#5 全部关闭——音频自动同步（24 首入库+每日定时）、播放器 Dribbble 玻璃重设计（m4a 主源）、全屏文字卡全透明**。真正待办只剩需用户输入项：Umami 凭据、友链/杂谈/关于/小说内容。见 7.5。
+> 进度：**P0–P7 全部完成并线上验收，P7 域名切换完成；可选加固全部完成**。第二轮 8 项需求 6 项已上线（见 4.9+4.10）；第三轮（见 4.11）：音乐悬浮播放器 + SSR 截断修复 + 文章补齐 11 篇；第四轮（见 4.12）：壁纸三模式/视口预取/首页边缘缓存；第五轮（见 4.13）：侧栏统一右列 + 正文可读性分层；**第六轮（2026-09-14，见 4.14）：issues #1-#5 全部关闭——音频自动同步（24 首入库+每日定时）、播放器 Dribbble 玻璃重设计（m4a 主源）、全屏文字卡全透明**。真正待办只剩需用户输入项：Umami 凭据、友链/杂谈/关于/小说内容。见 7.5。 **第七轮（2026-09-15，见 4.22）：对照 Twilight 导航栏改造——背景纹理提取为顶栏图标、多语言下拉面板（14 语言机翻）、全屏沉浸玻璃拟态增强、无标题文章隐藏目录栏**。
 >
 > ⚠️ **本文是深层档案，不再是阅读入口**。入口 = [`docs/README.md`](README.md)（索引+任务路由）；全面总结 = [`docs/项目全景与开发史.md`](项目全景与开发史.md)。
 > 原第 6 节坑大全 → [`docs/坑大全.md`](坑大全.md)；原第 8/9/10 节 → [`docs/命令与运维速查.md`](命令与运维速查.md)（编号不变，「坑 6.x」引用仍有效）。
@@ -161,6 +161,15 @@ cd ..\Kirameku-backend
 
 ---
 
+### 3.5 第七轮（2026-09-15，对照 Twilight 导航栏改造）
+
+| # | 需求 | 状态 | 关键证据 |
+|:--|:--|:--|:--|
+| ① | 页面背景（纹理）从显示设置面板提取为顶栏独立图标 | ✅ 已上线验证 | TextureSwitch.svelte：图标随纹理变化、hover 面板、点击循环；DisplaySettings 面板移除纹理段；见 4.22① |
+| ② | 图标移开菜单收回（鼠标在菜单上保持） | ✅ 已上线验证 | 纹理/语言面板 260ms 延迟收回 + pt-2 hit area；见 4.22② |
+| ③ | 语言切换移回前端 + Twilight 式多语言（14 种） | ✅ 已上线验证 | TranslateSwitch 重写为下拉面板；translate.js v4 整页机翻 + localStorage 记忆 + reset 还原；见 4.22③ |
+| ④ | 全屏沉浸文章/目录玻璃拟态 + 字清楚 | ✅ 已上线验证 | prose 55%+blur18、TOC 卡 48%+blur16、文字投影、悬浮目录玻璃；见 4.22④ |
+| ⑤ | 无标题文章不显示目录栏 | ✅ 已上线验证 | SidebarTOC 早退 + SideBar 编排过滤 + FAB 条件；难经（无 h2）隐藏/有标题文章正常；见 4.22⑤ |
 ## 4. 已完成工作详细记录
 
 ### 4.1 P0 基线（2026-09-12）
@@ -504,7 +513,7 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 **2026-09-15 第二轮（自动下一首修复 + 缓存实证/指纹自查）**：
 - **自动下一首失效根因**：`go()` 在 `setTracks((list) => { ... setCurrent(nextId) ... })` 的 updater 内调用 `setCurrent`——React 要求 updater 纯函数，嵌套 setState 会被重放/丢弃，`current` 原地不变 → `onEnded → next()` 后 effect 不重触发、播完即停。修复：updater 内只算 `nextId`，`setCurrent(nextId)` 移出 updater 独立调用（守卫依赖 `[badTracks, tracks.length]`）；`onEnded` 补兜底：`loop=false` 停止、单曲列表 `currentTime=0` 原地重播。见坑大全 6.3.23。
 - **缓存链路实证结论（线上 GET 实测）**：首页 HTML 响应 `Cache-Control: no-store` + `X-HTML-Cache: MISS`（middleware 已生效、CF 不缓存 HTML，每次请求回源最新）；`/_astro/*` 由 CF adapter 自动注入 `public, max-age=31536000, immutable`（HTTP 实测 CF HIT + ETag）→ 静态资源 hash 化、永远新 URL 不会陈旧。「更新后看不到」的服务器侧已无可修，真实原因都在客户端：休眠标签恢复不重新请求（未真正刷新）、或历史 3XX 无缓存头启发式缓存（坑 25 已解）。swup `cache:false` 已杜绝 app 内持久缓存。
-- **新增 X-Build-Id 自查指纹**：`astro.config.mjs` 构建期 `vite.define` 注入 git short SHA（取不到 git 回退时间戳）→ `middleware.ts` 对全站 HTML 设 `X-Build-Id` 响应头（HIT/MISS 分支均设）→ 部署后 `curl -sI https://neutronstar.fun/ | grep -i x-build-id` 与 web 仓 `git rev-parse --short HEAD` 对比，秒判线上是否最新。本地 preview 实测 `x-build-id=b28676d` 与 HEAD 一致。
+- **新增 X-Build-Id 自查指纹**：`astro.config.mjs` 构建期 `vite.define` 注入 git short SHA（取不到 git 回退时间戳）→ `middleware.ts` 对全站 HTML 设 `X-Build-Id` 响应头（HIT/MISS 分支均设）→ 部署后 `curl -s -o NUL -D - https://neutronstar.fun/ | grep -i x-build-id` 与 web 仓 `git rev-parse --short HEAD` 对比，秒判线上是否最新。⚠️ 必须 GET（HEAD 被 middleware 放行无指纹头）；⚠️ CI 部署约 2-3 分钟延迟，推送后等 2 分钟再查。本地 preview 实测 `x-build-id=b28676d` 与 HEAD 一致。
 - 改动文件：`web/src/components/islands/BiliFloatPlayer.tsx`、`web/astro.config.mjs`、`web/src/middleware.ts`；`pnpm build` 通过（新播放器产物 `BiliFloatPlayer.figX8sF9.js`）。**未推送**（本机无 GitHub 凭据），待外部环境 push 触发 CI。
 
 #### 4.11.5 遗留观察：后端 2 个测试在干净库上失败（既有问题）
@@ -668,6 +677,17 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **后端零改动**：`DEFAULT_PUBLIC_CONFIG` 本无 display 键（站点配置是通用 KV，display 是后台动态加的），前端不再消费即自然失效，admin 无需改。
 - **验证**：`npm run build` 通过；dist 产物 `displaySettings:{colorStyle:!0,colorSpec:!0,wallpaperMode:!0,layoutMode:!0,reduceMotion:!0,texture:!0}`；preview 下 `/`、`/2/`、`/posts/` 均 200、footer×2、`data-hue="315"`（静态默认，后台 display 不再影响）。
 
+#### 4.22 第七轮（2026-09-15，对照 Twilight 导航栏改造 + 全屏玻璃 + TOC 空标题）
+
+用户对照 [Spr-Aachen/Twilight](https://github.com/Spr-Aachen/Twilight) 源码提出 5 项前端改造（web 子仓，后端/BFF 零改动）。
+
+- **① 页面背景（纹理）提取为顶栏图标**：`DisplaySettings.svelte` 面板的纹理段移除（注释指向新图标）；新建 `components/organisms/TextureSwitch.svelte`——图标随当前纹理变化、桌面 hover 展开 6 项面板（none 收尾防误触纯色）、点击图标循环切换；与面板共用 `setting-utils` 存取 + `texture:change` 广播跨组件同步。`TopAppBar.astro` 在 WallpaperSwitch 后挂载，`resolveTextureOptions().enable` 控制显隐（纹理系统关闭时零残留）。
+- **② 图标移开菜单收回（鼠标在菜单上保持）**：纹理/语言两个新面板均实现桌面 hover 展开、离开 260ms 收回；面板与图标间距用 **pt-2（padding 而非 margin）** 扩大 hit area，鼠标经过间隙不触发关闭。踩坑：Svelte 的 `class:list` 是 class directive 语法而非数组工具——误用让面板 class 变成字面量 "list"、`float-panel-closed` 失效（面板不隐藏）；统一改为 `class={[...].join(" ")}`。
+- **③ 语言切换移回前端 + 多语言**：`TranslateSwitch.svelte` 从「中→EN 两态」重写为 Twilight 式下拉面板——14 种语言（en/zh_hans/zh_hant/ja/ko/ru/de/fr/es/tr/ar/th/vi/id，国旗+名称+当前勾选），translate.js v4（与 Twilight 同款底层，vendor 已升级到 4.0.5）整页机翻；localStorage `selected-language` 记忆、刷新自动恢复；切回简体中文调 `translate.reset()` 干净还原不刷新；`listener.start()` 跟随 swup 换页自动翻译新内容。语言清单单一数据源：新增 `src/i18n/languageConfig.ts`（`SOURCE_TRANSLATE_LANG = "chinese_simplified"`）；`i18nKey.ts` 加 `selectLanguage`，10 个语言词典补词条。
+- **④ 全屏沉浸玻璃拟态 + 字清楚**（`Layout.astro` fullscreen 规则增强）：文字卡轻玻璃 30%→**48% + blur16 + 高光边**；`.prose-host`（正文容器）专属 **55% + blur18**；侧栏目录卡（.m3-card）同 48% 通则；`#toc` / 悬浮目录 / 正文文字加投影（暗色深投影 `rgba(0,0,0,.35)`、亮色淡白投影 `rgba(255,255,255,.3)`，`:not(.dark)` 分支避免弄脏）；`.m3-floating-toc-panel` 移动端弹层玻璃化。
+- **⑤ 无标题不显示目录栏**：`SidebarTOC.astro` `headings.length === 0` 直接 `return`（防空壳卡片）；`SideBar.astro` 编排层追加 `(widget.type !== "toc" || headings.length > 0)` 过滤（无空盒间距残留）；`FloatingControls.astro` TOC FAB 加 `headings.length > 0` 条件（无标题文章不出现悬浮目录按钮）。
+
+- **验证**：`npm run build` 通过；preview（workerd）实测——语言切日文整页机翻、切回中文 reset 还原不刷新、localStorage 双键正确；纹理点击循环（localStorage/texture-preset 同步）；hover 展开/260ms 收回；难经（正文无 h2-h4）侧栏+悬浮 TOC 均隐藏、深色霓虹笔记（有 h2）目录正常渲染；fullscreen 下 `.prose-host` computed = 55%+blur(18px)、TOC 卡片 = 48%+blur(16px)、目录链接 text-shadow 生效。
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）
