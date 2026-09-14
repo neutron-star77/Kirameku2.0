@@ -10,8 +10,10 @@ import {
 import { uploadImage } from "@/api/album";
 import { getCategories } from "@/api/category";
 import { getTags } from "@/api/tag";
+import { getFonts } from "@/api/font";
 import type { CategoryItem } from "@/api/category";
 import type { TagItem } from "@/api/tag";
+import type { FontItem } from "@/api/font";
 import Vditor from "@/views/markdown/components/Vditor.vue";
 
 defineOptions({ name: "PostEdit" });
@@ -37,11 +39,13 @@ const form = ref({
   status: "draft",
   is_pinned: false,
   reading_time: 0,
-  word_count: 0
+  word_count: 0,
+  font_id: null as number | null
 });
 
 const categoryList = ref<CategoryItem[]>([]);
 const tagList = ref<TagItem[]>([]);
+const fontList = ref<FontItem[]>([]);
 const tagInputVisible = ref(false);
 const tagInputValue = ref("");
 const coverUploading = ref(false);
@@ -119,12 +123,14 @@ async function handleSave() {
 }
 
 onMounted(async () => {
-  const [cats, tags] = await Promise.all([
+  const [cats, tags, fonts] = await Promise.all([
     getCategories().catch(() => []),
-    getTags().catch(() => [])
+    getTags().catch(() => []),
+    getFonts().catch(() => [])
   ]);
   categoryList.value = cats;
   tagList.value = tags;
+  fontList.value = fonts;
 
   if (postId.value) {
     loading.value = true;
@@ -141,7 +147,8 @@ onMounted(async () => {
         status: detail.status,
         is_pinned: detail.is_pinned,
         reading_time: detail.reading_time ?? 0,
-        word_count: detail.word_count ?? 0
+        word_count: detail.word_count ?? 0,
+        font_id: detail.font_id ?? null
       };
       const cat = categoryList.value.find(c => c.name === detail.category);
       if (cat) form.value.category_id = cat.id;
@@ -215,6 +222,26 @@ onMounted(async () => {
             </el-form-item>
           </el-col>
           <el-col :span="8">
+            <el-form-item label="正文字体">
+              <el-select
+                v-model="form.font_id"
+                placeholder="默认字体"
+                clearable
+                class="w-full"
+              >
+                <el-option
+                  v-for="f in fontList"
+                  :key="f.id"
+                  :label="f.name"
+                  :value="f.id"
+                >
+                  <span :style="{ fontFamily: f.family + ', serif' }">{{ f.name }}</span>
+                  <span class="text-gray-400 text-xs ml-1">（{{ f.family }}）</span>
+                </el-option>
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
             <el-form-item label="状态">
               <el-select v-model="form.status" class="w-full">
                 <el-option label="草稿" value="draft" />
@@ -223,6 +250,9 @@ onMounted(async () => {
               </el-select>
             </el-form-item>
           </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
           <el-col :span="8">
             <el-form-item label="置顶">
               <el-switch v-model="form.is_pinned" />

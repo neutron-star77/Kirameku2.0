@@ -14,6 +14,7 @@ class PostCreate(BaseModel):
     is_pinned: bool = False
     reading_time: int = 0
     word_count: int = 0
+    font_id: int | None = None
 
 
 class PostUpdate(BaseModel):
@@ -28,6 +29,7 @@ class PostUpdate(BaseModel):
     is_pinned: bool | None = None
     reading_time: int | None = None
     word_count: int | None = None
+    font_id: int | None = None
 
 
 class PostOut(BaseModel):
@@ -44,6 +46,9 @@ class PostOut(BaseModel):
     likes: int
     word_count: int
     reading_time: int
+    font_id: int | None = None
+    font_name: str = ""
+    font_family: str = ""
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime

@@ -11,3 +11,6 @@ oss2>=2.18.0
 python-dotenv==1.0.1
 alembic==1.14.0
 pytest==8.3.4
+# 字体系统：seed_fonts.py 转 woff2 依赖（构建进镜像，容器内可跑 seed）
+fonttools>=4.50.0
+brotli>=1.1.0

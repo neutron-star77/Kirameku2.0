@@ -14,6 +14,9 @@ export type PostItem = {
   likes: number;
   word_count: number;
   reading_time: number;
+  font_id: number | null;
+  font_name: string;
+  font_family: string;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -58,6 +61,7 @@ export const createPost = (data: {
   tags?: string[];
   status?: string;
   is_pinned?: boolean;
+  font_id?: number | null;
 }) => {
   return http.request<PostItem>("post", "/api/posts", { data });
 };
@@ -75,6 +79,7 @@ export const updatePost = (
     tags?: string[];
     status?: string;
     is_pinned?: boolean;
+    font_id?: number | null;
   }
 ) => {
   return http.request<PostItem>("put", `/api/posts/${postId}`, { data });

@@ -3,7 +3,7 @@ import json
 from sqlmodel import Session, select, func
 from fastapi import HTTPException
 
-from app.models import Post, Category, Tag, PostTag
+from app.models import Post, Category, Tag, PostTag, FontAsset
 from app.schemas import PostCreate, PostUpdate
 
 
@@ -67,6 +67,12 @@ def _post_to_dict(post: Post, session: Session) -> dict:
         if tag:
             tag_names.append(tag.name)
 
+    font_name, font_family = "", ""
+    if post.font_id:
+        font = session.get(FontAsset, post.font_id)
+        if font:
+            font_name, font_family = font.name, font.family
+
     return {
         "id": post.id,
         "title": post.title,
@@ -82,6 +88,9 @@ def _post_to_dict(post: Post, session: Session) -> dict:
         "likes": post.likes,
         "word_count": post.word_count,
         "reading_time": post.reading_time,
+        "font_id": post.font_id,
+        "font_name": font_name,
+        "font_family": font_family,
         "published_at": post.published_at,
         "created_at": post.created_at,
         "updated_at": post.updated_at,

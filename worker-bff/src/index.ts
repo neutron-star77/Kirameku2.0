@@ -83,6 +83,7 @@ function tagsForPath(path: string): string[] {
   if (path.startsWith("/api/comments")) tags.add("comments");
   if (path.startsWith("/api/likes")) tags.add("all");
   if (path.startsWith("/api/site-config")) tags.add("site");
+  if (path.startsWith("/api/fonts")) tags.add("fonts");
   if (path.startsWith("/bff/home")) {
     tags.add("posts");
     tags.add("moments");

@@ -21,6 +21,7 @@ from app.schemas.bookmark import (
     BookmarkCategoryCreate, BookmarkCategoryUpdate, BookmarkCategoryOut,
     BookmarkSiteCreate, BookmarkSiteUpdate, BookmarkSiteOut, BookmarkFull,
 )
+from app.schemas.font import FontOut, FontCreate, FontUpdate
 
 __all__ = [
     "Token", "LoginRequest",
@@ -39,4 +40,5 @@ __all__ = [
     "SiteConfigUpdate", "SiteConfigOut",
     "BookmarkCategoryCreate", "BookmarkCategoryUpdate", "BookmarkCategoryOut",
     "BookmarkSiteCreate", "BookmarkSiteUpdate", "BookmarkSiteOut", "BookmarkFull",
+    "FontOut", "FontCreate", "FontUpdate",
 ]

@@ -48,6 +48,7 @@ class Post(SQLModel, table=True):
     likes: int = Field(default=0)
     word_count: int = Field(default=0)
     reading_time: int = Field(default=0)
+    font_id: Optional[int] = Field(default=None, foreign_key="font_asset.id", index=True)
     published_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
