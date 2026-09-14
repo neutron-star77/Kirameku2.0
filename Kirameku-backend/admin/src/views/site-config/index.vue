@@ -54,7 +54,20 @@ const defaultSidebarWidgets = JSON.stringify(
 
 const rules = {
   key: [{ required: true, message: "请输入配置键名", trigger: "blur" }],
-  value: [{ required: true, message: "请输入配置值", trigger: "blur" }]
+  value: [
+    {
+      validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+        const emptyAllowed =
+          form.value.key === "site_title" || form.value.key === "site_description";
+        if (!emptyAllowed && !String(value ?? "").trim()) {
+          callback(new Error("请输入配置值"));
+        } else {
+          callback();
+        }
+      },
+      trigger: "blur"
+    }
+  ]
 };
 
 const columns: TableColumnList = [
