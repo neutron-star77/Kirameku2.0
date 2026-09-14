@@ -137,7 +137,7 @@ cd ..\Kirameku-backend
 | ④ | 侧栏文章目录（TOC）修复：数据链路断裂 | ✅ 已上线验证 | [slug].astro 从渲染 HTML 提取 h2-h4（rehype-slug 已有 id）传 headings——该 prop 自 P2 起从未接入；TableOfContents 自带 scrollspy/active 高亮/平滑滚动，数据接上即用；线上截图验收（目录+滚动跟随高亮）；commit `9f8ef54` |
 | ⑤ | 顶栏壁纸快速切换按钮 | ✅ | WallpaperSwitch 一键循环三模式（与面板共用存取/广播）；`9f8ef54` |
 | ⑥ | 顶栏语言切换（整页机翻） | ✅ | translate.js v3（MIT，vendor 到 public/translate.js，与 Twilight 同款底层）；中→EN 两态，listener 跟随 swup 新内容，回原文 reload；`9f8ef54` |
-| ⑦ | 显示面板瘦身：配色风格/规范/纹理/布局移后台 | ✅ 已上线 | displaySettings 四开关关 + site_config 新键 display(JSON: hue/layoutMode/texturePreset/textureOpacity) → site-overrides → ConfigCarrier/PostPage；面板只留 页面背景/模糊/动效；commit `f5fdce2` |
+| ⑦ | 显示面板瘦身：配色风格/规范/纹理/布局移后台 | ✅ 曾上线 → **已回滚（2026-09-15 移回前台）** | 原：displaySettings 四开关关 + site_config 新键 display(JSON: hue/layoutMode/texturePreset/textureOpacity) → site-overrides → ConfigCarrier/PostPage；面板只留 页面背景/模糊/动效；commit `f5fdce2`。**2026-09-15 用户要求移回前台**：四开关恢复 true、后台 display 解析链全移除（见 4.21） |
 | ⑧ | Twilight 式 hover 交互 | ✅ 已上线 | 桌面悬停顶栏设置图标立即展开面板(离开 260ms 收回)、搜索胶囊悬停展开移出收回、明暗菜单同款；hover 绑定必须在 client:only 组件内(面板水合后才存在)；`f5fdce2` |
 | ⑨ | 全屏沉浸背景模糊滑条(0-20px) + 卡片毛玻璃悬浮 | ✅ 已上线 | localStorage 记忆+early-apply 防闪；壁纸 media 层 blur(--wallpaper-blur)+scale(1.12) 补偿；card-base/m3-card/postcard/float-panel 55%+blur(18px) **is:inline 输出**(lightningcss 把标准 backdrop-filter 改写为 -webkit-,Chrome 146 移除别名→失效,新坑 6.1.22)；线上截图验收；`4a25a0f` |
 | ⑩ | 悬浮播放器重写（APlayer 风格，对齐用户截图） | ✅ 已上线 | 去 iframe 改 <audio>；主源=GitHub bilimusic 仓 audio/{bvid}.mp3（gcore.jsdelivr），（B 站代理回退已移除——风控不可靠 6.3.20，bilimusic 主源唯一，缺曲跳过）；最小化=封面悬浮球可拖可点，刷新/关闭重置固定右下角（不再记位置/宽度）；ended 天然连播；web `9f9828b`、后端 bili_audio.py+router（spi 版已部署）；用户上传音频见使用说明 §2.1 |
@@ -643,6 +643,18 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **根因**：`web/astro.config.mjs` 中 `swup({ cache: true, ... })`，@swup/astro 以 **cache-first** 把每个页面 HTML 持久缓存进浏览器；旧版 `/posts`（当时=归档）响应一旦入缓存，之后点「文章」恒命中旧缓存、不再发网络请求，刷新也无法清除（无痕无此缓存故正常）。
 - **修复**：`cache: true → false`（同时自动关闭 preload）。改后每次点「文章」都走网络拿最新，杜绝 stale-forever。副作用：失去页面预取/缓存优化（博客内容实时更新，正确性优先，可接受）。
 - **兜底**：若用户历史存在残留 Service Worker（当前部署无 SW），建议浏览器「清除站点数据」一次性清理。
+
+#### 4.21 显示面板四项移回前台（2026-09-15，用户要求撤销 f5fdce2 的面板瘦身）
+- **需求**：f5fdce2（2026-09-14）把配色风格 9 宫格 / Color Spec / 背景纹理 / 列表-网格布局移出访客面板、改为后台 site_config `display` 键站点级配置（JSON：hue/layoutMode/texturePreset/textureOpacity）。用户明确要求**移回前台**——四项恢复为访客面板可调。
+- **改动（web 子仓）**：
+  - `config/siteConfig.ts`：`displaySettings.colorStyle/colorSpec/layoutMode/texture` 四开关 `false → true`（面板四项 UI 自 f5fdce2 一直保留，仅被开关隐藏，恢复即显示）。
+  - `utils/site-overrides.ts`：删除 `DisplayOverride` 接口、`EMPTY.display`、`cfg.display` 解析块与返回字段。
+  - `components/system/ConfigCarrier.astro`：恢复静态 `data-hue={siteConfig.themeColor.hue}` + 静态 texture 默认（不再 await getSiteOverrides）。
+  - `components/organisms/PostPage.astro`：恢复 `const { mode, cover, cardWidth } = postListConfig.layout`（删除 layoutMode prop 覆盖）。
+  - `pages/[...page].astro` 与 `pages/posts.astro`：移除 `getSiteOverrides().display?.layoutMode` 传参。
+- **保留**（f5fdce2 的独立功能，与四项无关）：Twilight 式 hover 展开、全屏沉浸背景模糊滑条（--wallpaper-blur）、卡片毛玻璃。
+- **后端零改动**：`DEFAULT_PUBLIC_CONFIG` 本无 display 键（站点配置是通用 KV，display 是后台动态加的），前端不再消费即自然失效，admin 无需改。
+- **验证**：`npm run build` 通过；dist 产物 `displaySettings:{colorStyle:!0,colorSpec:!0,wallpaperMode:!0,layoutMode:!0,reduceMotion:!0,texture:!0}`；preview 下 `/`、`/2/`、`/posts/` 均 200、footer×2、`data-hue="315"`（静态默认，后台 display 不再影响）。
 
 ## 5. 关键实现细节（改代码前必看）
 
