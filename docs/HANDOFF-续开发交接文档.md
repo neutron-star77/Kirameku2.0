@@ -499,7 +499,13 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 - **UI 仿 Twilight 改造**（`web/src/components/islands/BiliFloatPlayer.tsx`，参考 https://github.com/Spr-Aachen/Twilight 的 musicPlayer）：折叠态 = **主色小圆球**（56px `var(--primary)` 底 + 白音符，播放中切三格声波 EQ 动画），**点击一下即展开**；展开态 = 精简卡片（封面 48px 圆图 + 标题/艺人 + 细滑条进度 + 时间 + 控制行 ⟳/上首/播放/下首/☰ + 底部音量 + ▾ 折叠/✕ 关闭）。**删除**旧版封面大图 blur 光晕、高光描边、球/卡片拖动交互（对齐演示站固定右下角）。
 - **音频候选序升级**：`hls（{bvid}/index.m3u8 分片流，hls.js）→ .m4a → .mp3` 自动降级。修复两首大文件（BV1jy8o6eEMf 82.9MB / BV1apqWBLEGF 57.6MB）因 jsdelivr 20MB 上限 403 无法播放的问题——`scripts/bilimusic-sync.ps1` 新增 **>18MB 自动 ffmpeg 无损切 HLS**（坑大全 6.3.22），未来新增大曲目全自动分片。
 - **前端新增依赖 `hls.js`（1.7.3）**；播放器用 `Hls.isSupported()` 走 MSE、Safari 原生 m3u8 兜底、致命错误沿 `onAudioErrorRef` 逃逸降级（避免 useCallback 闭包循环依赖）。
-- **待办**：bilimusic 仓分片与 BV1MW411B7DJ 补推、web 仓 push 均需 GitHub 凭据（本机当前无凭据，见 8.3 凭据清单）；历史 140MB 大 m4a（BV1jy8o6eEMf/BV1apqWBLEGF）切分后是否从仓删除待用户确认。
+- **已办结**：bilimusic 仓分片与 BV1MW411B7DJ 补推、140MB 冗余大 m4a 删除、web 仓 Twilight UI + hls.js 部署、docs 回写均已推送上线（2026-09-15 02:2x，CI success）；jsdelivr 分片 m3u8/BV1MW.m4a 实测 200，线上 `_astro/BiliFloatPlayer.*.js` 已含 hls 分支。本机仍无 GitHub 凭据，后续推送需外部环境或补 PAT。
+
+**2026-09-15 第二轮（自动下一首修复 + 缓存实证/指纹自查）**：
+- **自动下一首失效根因**：`go()` 在 `setTracks((list) => { ... setCurrent(nextId) ... })` 的 updater 内调用 `setCurrent`——React 要求 updater 纯函数，嵌套 setState 会被重放/丢弃，`current` 原地不变 → `onEnded → next()` 后 effect 不重触发、播完即停。修复：updater 内只算 `nextId`，`setCurrent(nextId)` 移出 updater 独立调用（守卫依赖 `[badTracks, tracks.length]`）；`onEnded` 补兜底：`loop=false` 停止、单曲列表 `currentTime=0` 原地重播。见坑大全 6.3.23。
+- **缓存链路实证结论（线上 GET 实测）**：首页 HTML 响应 `Cache-Control: no-store` + `X-HTML-Cache: MISS`（middleware 已生效、CF 不缓存 HTML，每次请求回源最新）；`/_astro/*` 由 CF adapter 自动注入 `public, max-age=31536000, immutable`（HTTP 实测 CF HIT + ETag）→ 静态资源 hash 化、永远新 URL 不会陈旧。「更新后看不到」的服务器侧已无可修，真实原因都在客户端：休眠标签恢复不重新请求（未真正刷新）、或历史 3XX 无缓存头启发式缓存（坑 25 已解）。swup `cache:false` 已杜绝 app 内持久缓存。
+- **新增 X-Build-Id 自查指纹**：`astro.config.mjs` 构建期 `vite.define` 注入 git short SHA（取不到 git 回退时间戳）→ `middleware.ts` 对全站 HTML 设 `X-Build-Id` 响应头（HIT/MISS 分支均设）→ 部署后 `curl -sI https://neutronstar.fun/ | grep -i x-build-id` 与 web 仓 `git rev-parse --short HEAD` 对比，秒判线上是否最新。本地 preview 实测 `x-build-id=b28676d` 与 HEAD 一致。
+- 改动文件：`web/src/components/islands/BiliFloatPlayer.tsx`、`web/astro.config.mjs`、`web/src/middleware.ts`；`pnpm build` 通过（新播放器产物 `BiliFloatPlayer.figX8sF9.js`）。**未推送**（本机无 GitHub 凭据），待外部环境 push 触发 CI。
 
 #### 4.11.5 遗留观察：后端 2 个测试在干净库上失败（既有问题）
 
