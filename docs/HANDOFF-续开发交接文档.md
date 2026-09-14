@@ -619,6 +619,12 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **踩坑**：① FastAPI 参数顺序——`Header(...)` 带默认值后不能再跟无默认参数（`request: Request` 放前）；② NAS 部署脚本在 `Container/kirameku/` 根目录（非 backend/scripts/）；③ 老容器无 .env 文件（start-backend.sh 内联 -e），本次起统一走 `--env-file`。
 - **验证**：/solarsystem 200、/admin 301、设备密钥内网/公网均 200、公网 auto-login 403、内网 auto-login 200、nonce 重放第二次 401；浏览器访问 /solarsystem 直接进 #/welcome 无登录页。
 
+#### 4.17 后台编辑页优化 + 版本检测移除（2026-09-14）
+- **移除 vue-pure-admin 版本检测弹窗**：`src/App.vue` 删除 `version-rocket` 的 `checkVersion` 调用与 import（自部署后台无意义，本地更新不走远程发布）。
+- **字体预览显示实际正文**：`src/views/post/edit.vue` 新增 `stripToText()`（Vditor 的 markdown/HTML → 纯文本），「正文」模式直接渲染 `form.content` 实时预览（Vditor 输入即更新，max-h-80 滚动）。
+- **缺字检测提示**：canvas 宽度对比法——16px 下所选字体与 `monospace` 分别 `measureText` 单字符，宽度差 < 0.01px 判定为所选字体缺字（走回退）。缺字显示黄色 `el-alert`（列出前 40 个字符 + 总数），全支持显示绿色提示。触发：字体切换立即、正文变化防抖 300ms、模式切换。
+- **坑**：浏览器缓存旧 index.html 导致新旧资源混用（主 bundle 名判断：新 `index-B08wCpFj.js`）；验证前端改动必须 DevTools 禁缓存 + 硬刷新。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）

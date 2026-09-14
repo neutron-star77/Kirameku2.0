@@ -67,10 +67,7 @@ const previewFontStyle = computed(() => {
 });
 
 const previewSamples: Record<string, { text: string; cls: string }> = {
-  body: {
-    text: "天行健，君子以自强不息。地势坤，君子以厚德载物。故不积跬步，无以至千里；不积小流，无以成江海。",
-    cls: "text-base leading-8"
-  },
+  body: { text: "", cls: "text-base leading-8" },
   heading: {
     text: "风雅颂 · 兰亭集序",
     cls: "text-3xl font-bold"
@@ -80,6 +77,79 @@ const previewSamples: Record<string, { text: string; cls: string }> = {
     cls: "text-lg leading-9"
   }
 };
+
+// 正文预览：把 Vditor 内容（markdown 或 HTML）转成纯文本，直接预览实际正文
+function stripToText(raw: string): string {
+  const src = String(raw || "");
+  if (/<\/?[a-z][\s\S]*>/i.test(src) && !src.includes("```")) {
+    try {
+      const doc = new DOMParser().parseFromString(src, "text/html");
+      const t = doc.body.textContent?.trim();
+      if (t) return t;
+    } catch {
+      // fallthrough
+    }
+  }
+  return src
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/[*_~`>]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+const previewBodyText = computed(() => stripToText(form.value.content));
+
+const previewText = computed(() =>
+  previewMode.value === "body"
+    ? previewBodyText.value
+    : previewSamples[previewMode.value].text
+);
+
+// 缺字检测：canvas 宽度对比法——所选字体与 monospace 测量宽度相同即视为该字体缺字（走回退）
+const missingChars = ref<string[]>([]);
+const previewCanvas = ref<HTMLCanvasElement | null>(null);
+let detectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function detectMissing() {
+  const f = selectedFont.value;
+  if (!f || !previewText.value) {
+    missingChars.value = [];
+    return;
+  }
+  if (!previewCanvas.value) previewCanvas.value = document.createElement("canvas");
+  const ctx = previewCanvas.value.getContext("2d")!;
+  const seen = new Set<string>();
+  const missing: string[] = [];
+  for (const ch of previewText.value) {
+    if (seen.has(ch)) continue;
+    seen.add(ch);
+    ctx.font = `16px '${f.family}', monospace`;
+    const w1 = ctx.measureText(ch).width;
+    ctx.font = "16px monospace";
+    const w2 = ctx.measureText(ch).width;
+    if (Math.abs(w1 - w2) < 0.01) missing.push(ch);
+  }
+  missingChars.value = missing.slice(0, 40);
+}
+
+const missingInfo = computed(() => {
+  if (!selectedFont.value || !previewText.value) return "";
+  if (missingChars.value.length === 0) return "所选字体支持预览内容全部字符";
+  return `该字体缺少 ${missingChars.value.length} 个字符，将回退默认字体显示：${missingChars.value.join(" ")}`;
+});
+
+function scheduleDetect() {
+  if (detectTimer) clearTimeout(detectTimer);
+  detectTimer = setTimeout(() => {
+    detectMissing();
+    detectTimer = null;
+  }, 300);
+}
 
 watch(
   () => form.value.font_id,
@@ -98,14 +168,24 @@ watch(
     previewStyleEl.value.textContent =
       `@font-face{font-family:"${f.family}";src:url("/api/fonts/${f.id}/file") format("woff2");font-display:swap;font-weight:400;}`;
     try {
-      await document.fonts.load(`400 16px "${f.family}"`, previewSamples[previewMode.value].text);
+      await document.fonts.load(`400 16px "${f.family}"`, previewText.value);
     } catch {
       // 加载失败（字体文件过大/网络）仍显示，交给字体回退
     }
     previewLoaded.value = true;
+    detectMissing();
   },
   { immediate: true }
 );
+
+watch(
+  () => form.value.content,
+  () => scheduleDetect()
+);
+
+watch(previewMode, () => {
+  if (previewLoaded.value) scheduleDetect();
+});
 
 const rules = {
   title: [{ required: true, message: "请输入标题", trigger: "blur" }],
@@ -326,13 +406,20 @@ onMounted(async () => {
             </div>
             <div
               v-loading="!previewLoaded"
-              class="rounded-md border border-gray-200 dark:border-gray-700 p-4 min-h-24 bg-white dark:bg-gray-900"
+              class="rounded-md border border-gray-200 dark:border-gray-700 p-4 min-h-24 max-h-80 overflow-auto bg-white dark:bg-gray-900"
               :style="previewFontStyle"
             >
               <p :class="previewSamples[previewMode].cls">
-                {{ previewSamples[previewMode].text }}
+                {{ previewText }}
               </p>
             </div>
+            <el-alert
+              v-if="missingInfo && selectedFont"
+              :type="missingChars.length === 0 ? 'success' : 'warning'"
+              :closable="false"
+              class="mt-2"
+              :title="missingInfo"
+            />
           </div>
         </el-form-item>
 
