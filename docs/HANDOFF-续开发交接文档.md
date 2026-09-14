@@ -623,6 +623,7 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **移除 vue-pure-admin 版本检测弹窗**：`src/App.vue` 删除 `version-rocket` 的 `checkVersion` 调用与 import（自部署后台无意义，本地更新不走远程发布）。
 - **字体预览显示实际正文**：`src/views/post/edit.vue` 新增 `stripToText()`（Vditor 的 markdown/HTML → 纯文本），「正文」模式直接渲染 `form.content` 实时预览（Vditor 输入即更新，max-h-80 滚动）。
 - **缺字检测提示**：canvas 宽度对比法——16px 下所选字体与 `monospace` 分别 `measureText` 单字符，宽度差 < 0.01px 判定为所选字体缺字（走回退）。缺字显示黄色 `el-alert`（列出前 40 个字符 + 总数），全支持显示绿色提示。触发：字体切换立即、正文变化防抖 300ms、模式切换。
+- **修复（2026-09-14 第二轮）**：① 字体切换瞬间清空旧提示，避免残留上一字体的警告；② 加载后 `document.fonts.ready` 加 5s 超时兜底（ready 偶发挂起）；③ 检测前 `document.fonts.check` 确认字体就绪，3s 内未就绪放弃检测（**不强制测量**——此前 10MB 大字体未加载完就测量会全字符误判缺字，导致切到全字库字体仍显示假警告）；④ 清空字体（默认）时提示一并清空。
 - **坑**：浏览器缓存旧 index.html 导致新旧资源混用（主 bundle 名判断：新 `index-B08wCpFj.js`）；验证前端改动必须 DevTools 禁缓存 + 硬刷新。
 
 ## 5. 关键实现细节（改代码前必看）

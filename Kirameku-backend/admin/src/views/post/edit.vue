@@ -115,9 +115,8 @@ const missingChars = ref<string[]>([]);
 const previewCanvas = ref<HTMLCanvasElement | null>(null);
 let detectTimer: ReturnType<typeof setTimeout> | null = null;
 
-function detectMissing() {
-  const f = selectedFont.value;
-  if (!f || !previewText.value) {
+function measureMissing(f: FontItem) {
+  if (!previewText.value) {
     missingChars.value = [];
     return;
   }
@@ -135,6 +134,22 @@ function detectMissing() {
     if (Math.abs(w1 - w2) < 0.01) missing.push(ch);
   }
   missingChars.value = missing.slice(0, 40);
+}
+
+function detectMissing() {
+  const f = selectedFont.value;
+  if (!f) {
+    missingChars.value = [];
+    return;
+  }
+  // 字体未就绪（大文件还在下载）时等待就绪再测量；超时放弃检测（清空提示），避免误判全缺字
+  const ready = () => document.fonts.check(`16px "${f.family}"`);
+  const tryMeasure = (tries: number) => {
+    if (ready()) measureMissing(f);
+    else if (tries > 30) missingChars.value = []; // 3s 未就绪：不显示提示，宁可保守
+    else setTimeout(() => tryMeasure(tries + 1), 100);
+  };
+  tryMeasure(0);
 }
 
 const missingInfo = computed(() => {
@@ -155,6 +170,7 @@ watch(
   () => form.value.font_id,
   async id => {
     previewLoaded.value = false;
+    missingChars.value = []; // 切换即清空旧提示，避免残留
     if (!previewStyleEl.value) {
       previewStyleEl.value = document.createElement("style");
       document.head.appendChild(previewStyleEl.value);
@@ -163,12 +179,18 @@ watch(
     const f = fontList.value.find(x => x.id === id);
     if (!f) {
       previewLoaded.value = true;
-      return;
+      return; // 未选字体：提示已在上面清空
     }
     previewStyleEl.value.textContent =
       `@font-face{font-family:"${f.family}";src:url("/api/fonts/${f.id}/file") format("woff2");font-display:swap;font-weight:400;}`;
     try {
-      await document.fonts.load(`400 16px "${f.family}"`, previewText.value);
+      await Promise.race([
+        (async () => {
+          await document.fonts.load(`400 16px "${f.family}"`, previewText.value);
+          await document.fonts.ready;
+        })(),
+        new Promise(res => setTimeout(res, 5000)) // ready 偶发挂起兜底
+      ]);
     } catch {
       // 加载失败（字体文件过大/网络）仍显示，交给字体回退
     }
