@@ -495,6 +495,12 @@ CI 部署后用 Edge headless（独立 `--user-data-dir`，见 6.4.8）对正式
 
 **已知限制**：跨域 iframe 拿不到真实暂停/进度——用户在 iframe 里手动暂停后，时长兜底定时器到点仍会切下一首；B 站接口风控若将来连 NAS IP 也拦，需要加 cookie 或换用 wbi 签名（现在没这问题）。
 
+**2026-09-15 迭代（Twilight 精简 UI + HLS 大文件修复）**：
+- **UI 仿 Twilight 改造**（`web/src/components/islands/BiliFloatPlayer.tsx`，参考 https://github.com/Spr-Aachen/Twilight 的 musicPlayer）：折叠态 = **主色小圆球**（56px `var(--primary)` 底 + 白音符，播放中切三格声波 EQ 动画），**点击一下即展开**；展开态 = 精简卡片（封面 48px 圆图 + 标题/艺人 + 细滑条进度 + 时间 + 控制行 ⟳/上首/播放/下首/☰ + 底部音量 + ▾ 折叠/✕ 关闭）。**删除**旧版封面大图 blur 光晕、高光描边、球/卡片拖动交互（对齐演示站固定右下角）。
+- **音频候选序升级**：`hls（{bvid}/index.m3u8 分片流，hls.js）→ .m4a → .mp3` 自动降级。修复两首大文件（BV1jy8o6eEMf 82.9MB / BV1apqWBLEGF 57.6MB）因 jsdelivr 20MB 上限 403 无法播放的问题——`scripts/bilimusic-sync.ps1` 新增 **>18MB 自动 ffmpeg 无损切 HLS**（坑大全 6.3.22），未来新增大曲目全自动分片。
+- **前端新增依赖 `hls.js`（1.7.3）**；播放器用 `Hls.isSupported()` 走 MSE、Safari 原生 m3u8 兜底、致命错误沿 `onAudioErrorRef` 逃逸降级（避免 useCallback 闭包循环依赖）。
+- **待办**：bilimusic 仓分片与 BV1MW411B7DJ 补推、web 仓 push 均需 GitHub 凭据（本机当前无凭据，见 8.3 凭据清单）；历史 140MB 大 m4a（BV1jy8o6eEMf/BV1apqWBLEGF）切分后是否从仓删除待用户确认。
+
 #### 4.11.5 遗留观察：后端 2 个测试在干净库上失败（既有问题）
 
 `pytest` 报 2 failed（test_likes_and_comments 的 github_user UNIQUE 约束冲突），**git stash 基线同样失败**，与第三轮改动无关。疑与 4.9.3 登录日志改动后测试种子的 github_user 复用有关。待办（P2）：修测试种子，恢复"19 passed"基线。
