@@ -20,7 +20,8 @@ import { useUserStoreHook } from "@/store/modules/user";
 import { initRouter, getTopMenu } from "@/router/utils";
 import { bg, avatar, illustration } from "./utils/static";
 import { ReImageVerify } from "@/components/ReImageVerify";
-import { ref, toRaw, reactive, watch, computed } from "vue";
+import { setToken } from "@/utils/auth";
+import { ref, toRaw, reactive, watch, computed, onMounted } from "vue";
 import { useRenderIcon } from "@/components/ReIcon/src/hooks";
 import { useTranslationLang } from "@/layout/hooks/useTranslationLang";
 import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
@@ -61,6 +62,21 @@ const ruleForm = reactive({
   username: "admin",
   password: "admin123",
   verifyCode: ""
+});
+
+// 内网自动登录：命中后端 IP 白名单（家用内网）即免密直进后台，不显示登录表单
+onMounted(async () => {
+  try {
+    const res = await fetch("/api/auth/auto-login", { method: "POST" });
+    if (!res.ok) return;
+    const json = await res.json();
+    if (json.code !== 0) return;
+    setToken(json.data);
+    await initRouter();
+    router.push(getTopMenu(true).path);
+  } catch {
+    // 非内网来源/接口不可达：正常显示登录表单
+  }
 });
 
 const onLogin = async (formEl: FormInstance | undefined) => {

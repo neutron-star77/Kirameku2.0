@@ -611,6 +611,14 @@ TTFB 1.6s 的根因=每次 GET / 都回源 NAS+SSR。实现三层：
 - **授权台账**：id 4/5 OFL-1.1 可商用；id 6/7 个人非商用（站长已知风险自担，公网分发有越权争议）；id 8/9 中研院史语所字库（研究用途）。
 - **已知限制**：后台暂无独立字体管理页（增删走 API）；BFF 字体列表 60s 边缘缓存无主动失效；霞鹜篆书仅 210 字属先行测试版。
 
+#### 4.16 认证改造：设备密钥 + 内网自动登录 + 路径 /solarsystem（2026-09-14）
+- **动机**：后台登录页纯前端图片验证码挡住浏览器自动化；AI 依赖 admin/admin123 弱密码留痕。目标：SSH 公钥私钥式通道 + 本机免登录。
+- **Ed25519 设备密钥**：`POST /api/auth/device`，body `{ts, nonce}` + 头 `X-Signature`（私钥对 `ts|nonce` 签名，base64）。验签：`DEVICE_PUBLIC_KEY`（NAS `backend/.env`，hex，绝不入库）+ 时间戳窗口 `DEVICE_SIGN_WINDOW=300` + nonce 防重放（进程内 dict，顺带清理窗口外记录）。签发管理员 JWT，写 login_log。客户端：`scripts/device-login.py`（私钥 `F:\AI\secrets\kirameku-device-key.pem`，项目外）。
+- **内网自动登录**：`POST /api/auth/auto-login`，来源 IP（CF-Connecting-IP/X-Forwarded-For 优先）命中 `AUTO_LOGIN_CIDRS`（默认 127/8、10/8、172.16/12、192.168/16）即免密签发 JWT；公网 403。admin 登录页 `onMounted` 自动调用，成功 `setToken` + `initRouter` 直进后台——**本机/内网访问无登录界面**。公网仍走密码+验证码（验证码为前端 ReImageVerify 组件，请求不发后端）。
+- **路径改造**：`main.py` mount `/solarsystem`（原 `/admin`），`/admin` 与 `/admin/` 301 → `/solarsystem/`；admin `.env.production` `VITE_PUBLIC_PATH=/solarsystem/`（hash 路由不受影响）。**部署走 NAS redeploy 脚本**（backend 代码在镜像内）：同步 app 代码 + `backend/.env`（首次创建，含 DATABASE_URL/SECRET_KEY/CORS/DEVICE_PUBLIC_KEY）→ `sh /share/CACHEDEV1_DATA/Container/kirameku/redeploy-backend.sh`（build 缓存秒级 + stop/rm/run `--env-file`）。
+- **踩坑**：① FastAPI 参数顺序——`Header(...)` 带默认值后不能再跟无默认参数（`request: Request` 放前）；② NAS 部署脚本在 `Container/kirameku/` 根目录（非 backend/scripts/）；③ 老容器无 .env 文件（start-backend.sh 内联 -e），本次起统一走 `--env-file`。
+- **验证**：/solarsystem 200、/admin 301、设备密钥内网/公网均 200、公网 auto-login 403、内网 auto-login 200、nonce 重放第二次 401；浏览器访问 /solarsystem 直接进 #/welcome 无登录页。
+
 ## 5. 关键实现细节（改代码前必看）
 
 ### 5.1 取数两条路（别混）

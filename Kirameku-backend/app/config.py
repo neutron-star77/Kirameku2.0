@@ -10,6 +10,18 @@ SECRET_KEY = os.environ["SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 72
 
+# Ed25519 设备密钥登录（SSH 式）：私钥在站长/自动化侧，公钥进容器 env，不进任何 git
+DEVICE_PUBLIC_KEY = os.environ.get("DEVICE_PUBLIC_KEY", "")
+DEVICE_SIGN_WINDOW = int(os.environ.get("DEVICE_SIGN_WINDOW", "300"))  # 签名时间戳允许偏移（秒）
+# 内网自动登录白名单（CIDR 列表）：来源 IP 命中即免密签发管理员 JWT（家用 NAS 内网视为可信域）
+AUTO_LOGIN_CIDRS = [
+    c.strip()
+    for c in os.environ.get(
+        "AUTO_LOGIN_CIDRS", "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    ).split(",")
+    if c.strip()
+]
+
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:4321,"

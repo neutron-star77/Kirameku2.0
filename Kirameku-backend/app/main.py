@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import CORS_ORIGINS
@@ -33,10 +34,16 @@ uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
-# 挂载 Vue 管理后台
+# 挂载 Vue 管理后台（路径改为 /solarsystem，/admin 旧地址 301 指到新入口）
 admin_dist = Path(__file__).resolve().parent.parent / "admin" / "dist"
 if admin_dist.exists():
-    app.mount("/admin", StaticFiles(directory=str(admin_dist), html=True), name="admin")
+    app.mount("/solarsystem", StaticFiles(directory=str(admin_dist), html=True), name="admin")
+    @app.get("/admin", include_in_schema=False)
+    async def admin_redirect():
+        return RedirectResponse(url="/solarsystem/", status_code=301)
+    @app.get("/admin/", include_in_schema=False)
+    async def admin_redirect_slash():
+        return RedirectResponse(url="/solarsystem/", status_code=301)
 
 
 @app.get("/api/health")
